@@ -24,21 +24,26 @@
 #define RSI 0b110
 #define RDI 0b111
 
+#define TRUE (1)
+#define FALSE (0)
+
 enum operand_encoding_type
 {
-	Z,
-	ZO,
 	I,
+	O,
+	Z,
+	D,
+	MR,
 	OI,
 	RM,
-	D,
-	MR
+	ZO
 };
 
 typedef struct
 {
 	char* mnemonic;
 	enum operand_encoding_type op;
+	char rex_long;
 	size_t op_1;
 	size_t op_2;
 	size_t primary;

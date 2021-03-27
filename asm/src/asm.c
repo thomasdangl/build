@@ -10,15 +10,19 @@
 
 op_t op[] =
 {
-	{ "lea", RM, REG64, IMM32, 0x8D, EMPTY },
-	{ "mov", OI, REG32, IMM32, 0xB8, EMPTY },
-	{ "mov", OI, REG64, IMM64, 0xB8, EMPTY },
-	{ "xor", MR, REG64, REG64, 0x31, EMPTY },
-	{ "int", I, IMM8, EMPTY, 0xCD, 0x00 },
-	{ "syscall", ZO, EMPTY, EMPTY, 0x0F, 0x05 },
-	{ "call", D, IMM32, EMPTY, 0xE8, EMPTY },
-	{ "ret", ZO, EMPTY, EMPTY, 0xC3, EMPTY },
-	{ "db", EMPTY, IMM8, EMPTY, EMPTY, EMPTY }
+	/* mn | Op/En | REX long | OP1 | OP2 | CODE_PRIMARY | CODE_SECONDARY */
+	{ "lea", RM, FALSE, REG64, IMM32, 0x8D, EMPTY },
+	{ "mov", OI, FALSE, REG32, IMM32, 0xB8, EMPTY },
+	{ "mov", OI, FALSE, REG64, IMM64, 0xB8, EMPTY },
+	{ "mov", MR, FALSE, REG64, REG64, 0x89, EMPTY },
+	{ "push", O, TRUE, REG64, REG64, 0x50, EMPTY },
+	{ "pop", O, TRUE, REG64, REG64, 0x58, EMPTY },
+	{ "xor", MR, FALSE, REG64, REG64, 0x31, EMPTY },
+	{ "int", I, FALSE, IMM8, EMPTY, 0xCD, 0x00 },
+	{ "syscall", ZO, FALSE, EMPTY, EMPTY, 0x0F, 0x05 },
+	{ "call", D, FALSE, IMM32, EMPTY, 0xE8, EMPTY },
+	{ "ret", ZO, FALSE, EMPTY, EMPTY, 0xC3, EMPTY },
+	{ "db", EMPTY, FALSE, IMM8, EMPTY, EMPTY, EMPTY }
 };
 
 reg_t reg[] =
@@ -171,11 +175,11 @@ void asm_make_instr(asm_t *as)
 
 	if (IS_REG(op->op_1))
 	{
-		if (op->op == OI)
+		if (op->op == O || op->op == OI)
 			primary += asm_decode_reg(as, 0);
-
+		
 		/* write REX prefix */
-		if (op->op_1 & REG64)
+		if (!op->rex_long && op->op_1 & REG64)
 			asm_emit(as, 0b01001000);
 	}
 
@@ -193,8 +197,9 @@ void asm_make_instr(asm_t *as)
 	
 	if (IS_REG(op->op_2) && op->op == MR)
 	{
-		/* mod = 00 (register-direct), reg = as decoded, rm = 000 (r/m) */
+		/* mod = 00 (register-direct), reg = as decoded, rm = as decoded */
 		char rm = 0b11000000;
+		rm |= asm_decode_reg(as, 0);
 		rm |= asm_decode_reg(as, 1) << 3;
 		asm_emit(as, rm);
 	}

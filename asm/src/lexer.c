@@ -47,6 +47,8 @@ char* lexer_advance(lexer_t *lex)
 	if (!lex->cur->dup)
 	{
 		lex->cur->dup = strdup(lex->cur->str);
+		char *end = strchr(lex->cur->dup, '#');
+		if (end != 0) *end = '\0';
 		lex->cur->p = strtok(lex->cur->dup, " ");
 		lex->cur->next = 0;
 	}
