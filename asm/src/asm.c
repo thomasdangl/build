@@ -10,19 +10,32 @@
 
 op_t op[] =
 {
-	/* mn | Op/En | REX long | OP1 | OP2 | CODE_PRIMARY | CODE_SECONDARY */
-	{ "lea", RM, FALSE, REG64, IMM32, 0x8D, EMPTY },
-	{ "mov", OI, FALSE, REG32, IMM32, 0xB8, EMPTY },
-	{ "mov", OI, FALSE, REG64, IMM64, 0xB8, EMPTY },
-	{ "mov", MR, FALSE, REG64, REG64, 0x89, EMPTY },
-	{ "push", O, TRUE, REG64, REG64, 0x50, EMPTY },
-	{ "pop", O, TRUE, REG64, REG64, 0x58, EMPTY },
-	{ "xor", MR, FALSE, REG64, REG64, 0x31, EMPTY },
-	{ "int", I, FALSE, IMM8, EMPTY, 0xCD, 0x00 },
-	{ "syscall", ZO, FALSE, EMPTY, EMPTY, 0x0F, 0x05 },
-	{ "call", D, FALSE, IMM32, EMPTY, 0xE8, EMPTY },
-	{ "ret", ZO, FALSE, EMPTY, EMPTY, 0xC3, EMPTY },
-	{ "db", EMPTY, FALSE, IMM8, EMPTY, EMPTY, EMPTY }
+	/* mn | Op/En | REX long | OP1 | OP2 | CODE_PRIMARY | CODE_SECONDARY | CODE_EXTENSION */
+	{ "lea", RM, FALSE, REG64, IMM32, 0x8D, EMPTY, EMPTY },
+	{ "mov", OI, FALSE, REG32, IMM32, 0xB8, EMPTY, EMPTY },
+	{ "mov", OI, FALSE, REG64, IMM64, 0xB8, EMPTY, EMPTY },
+	{ "mov", MR, FALSE, REG64, REG64, 0x89, EMPTY, EMPTY },
+	{ "mov", RM, FALSE, REG64, REG64, 0x8B, EMPTY, EMPTY },
+	{ "push", O, TRUE, REG64, REG64, 0x50, EMPTY, EMPTY },
+	{ "pop", O, TRUE, REG64, REG64, 0x58, EMPTY, EMPTY },
+	{ "add", MI, FALSE, REG64, IMM32, 0x81, EMPTY, EMPTY },
+	{ "add", MR, FALSE, REG64, REG64, 0x01, EMPTY, EMPTY },
+	{ "add", RM, FALSE, REG64, REG64, 0x03, EMPTY, EMPTY },
+	{ "inc", M, FALSE, REG64, EMPTY, 0xFF, EMPTY, EMPTY },
+	{ "sub", MI, FALSE, REG64, IMM32, 0x81, EMPTY, 0x05 },
+	{ "sub", MR, FALSE, REG64, REG32, 0x29, EMPTY, EMPTY },
+	{ "sub", RM, FALSE, REG64, REG32, 0x2B, EMPTY, EMPTY },
+	{ "dec", M, FALSE, REG64, EMPTY, 0xFF, EMPTY, 0x01 },
+	{ "xor", MR, FALSE, REG64, REG64, 0x31, EMPTY, EMPTY },
+	{ "cmp", MI, FALSE, REG64, IMM32, 0x81, EMPTY, 0x07 },
+	{ "test", MI, FALSE, REG64, IMM32, 0xF7, EMPTY, EMPTY },
+	{ "je", D, FALSE, IMM8, EMPTY, 0x74, EMPTY, EMPTY },
+	{ "jne", D, FALSE, IMM8, EMPTY, 0x75, EMPTY, EMPTY },
+	{ "int", I, FALSE, IMM8, EMPTY, 0xCD, 0x00, EMPTY },
+	{ "syscall", ZO, FALSE, EMPTY, EMPTY, 0x0F, 0x05, EMPTY },
+	{ "call", D, FALSE, IMM32, EMPTY, 0xE8, EMPTY, EMPTY },
+	{ "ret", ZO, FALSE, EMPTY, EMPTY, 0xC3, EMPTY, EMPTY },
+	{ "db", EMPTY, FALSE, IMM8, EMPTY, EMPTY, EMPTY, EMPTY }
 };
 
 reg_t reg[] =
@@ -139,8 +152,12 @@ void asm_advance(asm_t *as, char *new)
 	{
 		as->cur.op = realloc(as->cur.op, ++as->cur.op_count * sizeof(char*));
 		as->cur.op_sym = realloc(as->cur.op_sym, as->cur.op_count * sizeof(symbol_t*));
+		as->cur.op_disp = realloc(as->cur.op_disp, as->cur.op_count * sizeof(int));
+		as->cur.op_rel = realloc(as->cur.op_rel, as->cur.op_count * sizeof(int));
 		as->cur.op[as->cur.op_count - 1] = as->token;
 		as->cur.op_sym[as->cur.op_count - 1] = 0;
+		as->cur.op_disp[as->cur.op_count - 1] = ~0;
+		as->cur.op_rel[as->cur.op_count - 1] = 0;
 	}
 
 	if (!lexer_peek(as->lex))
@@ -171,6 +188,7 @@ void asm_make_instr(asm_t *as)
 	}
 
 	symbol_t *sym;
+	int *disp;
 	char primary = op->primary;
 
 	if (IS_REG(op->op_1))
@@ -187,23 +205,69 @@ void asm_make_instr(asm_t *as)
 
 	/* write ModR/M */
 	/* TODO: these need to be dynamic at some point in the future */
+	
+	if (IS_REG(op->op_1) && (op->op == M || op->op == MI))
+	{
+		/* mod = 11 (register-direct), reg = as decoded, rm = as decoded */
+		char rm = 0b11000000;
+		rm |= op->extension << 3;
+		rm |= asm_decode_reg(as, 0);
+		asm_emit(as, rm);
+	}
+	
+	if (IS_REG(op->op_1) && op->op == MR)
+	{
+		char rm = 0b00000000;
+		disp = &as->cur.op_disp[0];
+
+		if (IS_REG(op->op_2))
+		{
+			rm |= asm_decode_reg(as, 0);
+			rm |= asm_decode_reg(as, 1) << 3;
+
+			/* TODO: use 8-bit when possible */
+			if (*disp != ~0)
+				rm |= 0b10 << 6;
+			else
+				rm |= 0b11 << 6;
+		}
+		else
+			rm |= asm_decode_reg(as, 0) << 3;
+
+		asm_emit(as, rm);
+		
+		if (*disp != ~0)
+			asm_emit_imm(as, IMM32, *disp);
+	}
+
 	if (IS_REG(op->op_1) && op->op == RM)
 	{
-		/* mod = 00 (register-indirect), reg = as decoded, rm = 101 (RIP + disp32) */
-		char rm = 0b00000101;
+		char rm = 0b00000000;
+		disp = &as->cur.op_disp[1];
+
 		rm |= asm_decode_reg(as, 0) << 3;
+
+		if (IS_REG(op->op_2))
+		{
+			rm |= asm_decode_reg(as, 1);
+
+			/* TODO: use 8-bit when possible */
+			if (*disp != ~0)
+				rm |= 0b10 << 6;
+			else
+				rm |= 0b11 << 6;
+		}
+		else if (as->cur.op_rel[1])
+			rm |= 0b101;
+		else
+			rm |= asm_decode_reg(as, 0) << 3;
+
 		asm_emit(as, rm);
+		
+		if (*disp != ~0)
+			asm_emit_imm(as, IMM32, *disp);
 	}
-	
-	if (IS_REG(op->op_2) && op->op == MR)
-	{
-		/* mod = 00 (register-direct), reg = as decoded, rm = as decoded */
-		char rm = 0b11000000;
-		rm |= asm_decode_reg(as, 0);
-		rm |= asm_decode_reg(as, 1) << 3;
-		asm_emit(as, rm);
-	}
-	
+
 	if (op->secondary)
 		asm_emit(as, op->secondary);
 	
@@ -382,7 +446,7 @@ op_t* asm_match_op(asm_t *as)
 	}
 	
 	as->cur.op = cur_op;
-	as->cur.op_sym_count = as->cur.op_count;
+	as->cur.op_count2 = as->cur.op_count;
 	as->cur.op_count = cur_op_count;
 
 	char *ops = alloca(as->cur.op_count * sizeof(size_t)), fail = 0;
@@ -415,13 +479,29 @@ op_t* asm_match_op(asm_t *as)
 				return cur;
 		}
 		
-		if (as->cur.op_count > 0 && ((IS_REG(cur->op_1) && cur->op_1 != ops[0])
-					|| (IS_IMM(cur->op_1) != IS_IMM(ops[0]))))
-			continue;
+		if (as->cur.op_count > 0)
+		{
+			/* types matching? */
+			if ((IS_REG(cur->op_1) && cur->op_1 != ops[0])
+				|| (IS_IMM(cur->op_1) != IS_IMM(ops[0])))
+				continue;
 
-		if (as->cur.op_count > 1 && ((IS_REG(cur->op_2) && cur->op_2 != ops[1])
-					|| IS_IMM(cur->op_2) != IS_IMM(ops[1])))
-			continue;
+			/* r/x matching? */
+			if (cur->op == MR && as->cur.op_disp[1] != ~0)
+				continue;
+		}
+
+		if (as->cur.op_count > 1)
+		{
+			/* types matching? */
+			if ((IS_REG(cur->op_2) && cur->op_2 != ops[1])
+				|| IS_IMM(cur->op_2) != IS_IMM(ops[1]))
+				continue;
+			
+			/* r/x matching? */
+			if (cur->op == RM && as->cur.op_disp[0] != ~0)
+				continue;
+		}
 		
 		return cur;
 	}
@@ -437,14 +517,30 @@ void asm_resolve_op(asm_t *as, size_t ind)
 		exit(1);
 	}
 
-	char *op = as->cur.op[ind], rel = 0;
+	char *op = as->cur.op[ind], *sign;
+	int *disp = &as->cur.op_disp[ind];
 	size_t len = strlen(op);
 
 	if (len > 2 && op[0] == '[' && op[len - 1] == ']')
 	{
 		op[len - 1] = '\0';
 		op++;
-		rel = 1;
+		*disp = 0;
+
+		if (sign = strchr(op, '+'))
+		{
+			as->cur.op[ind] = sign + 1;
+			*disp = asm_decode_imm(as, ind);
+			as->cur.op[ind] = op;
+			*sign = '\0';
+		}
+		else if (sign = strchr(op, '-'))
+		{
+			as->cur.op[ind] = sign + 1;
+			*disp = -asm_decode_imm(as, ind);
+			as->cur.op[ind] = op;
+			*sign = '\0';
+		}
 	}
 
 	symbol_t *sym = asm_find_symbol(as, op);
@@ -453,9 +549,13 @@ void asm_resolve_op(asm_t *as, size_t ind)
 		size_t addr = sym->addr;
 		as->cur.op_sym[ind] = sym;
 
-		/* TODO: here we need to know the real instruction length */
-		if (rel)
+		/* TODO: can we move this to the place we calculate relative calls? */
+		if (*disp == 0)
+		{
 			addr -= as->out_count + 7;
+			*disp = ~0;
+			as->cur.op_rel[ind] = 1;
+		}
 
 		op = calloc(19, 1);
 		sprintf(op, "0x%.16x", addr);

@@ -30,7 +30,9 @@ typedef struct
 	char **op;
 	size_t op_count;
 	symbol_t **op_sym;
-	size_t op_sym_count;
+	int *op_disp;
+	char *op_rel;
+	size_t op_count2;
 } instr_t;
 
 typedef struct

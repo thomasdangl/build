@@ -29,10 +29,12 @@
 
 enum operand_encoding_type
 {
+	D,
 	I,
+	M,
 	O,
 	Z,
-	D,
+	MI,
 	MR,
 	OI,
 	RM,
@@ -48,6 +50,7 @@ typedef struct
 	size_t op_2;
 	size_t primary;
 	size_t secondary;
+	size_t extension;
 } op_t;
 
 typedef struct
