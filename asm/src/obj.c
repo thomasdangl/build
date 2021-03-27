@@ -36,7 +36,7 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	elf->e_shstrndx = 1;
 
 	/* create our sections here */
-	for (size_t i = 0; i < elf->e_shentsize; i++)
+	for (size_t i = 0; i < elf->e_shnum; i++)
 	{
 		elf = realloc(elf, size + sizeof(Elf64_Shdr));
 		memset((char*) elf + size, 0, sizeof(Elf64_Shdr));
@@ -52,6 +52,7 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 		ELF_SECTION(elf, i)->sh_name = sec->sh_size;
 		size_t cur = strlen(sections[i]) + 1;
 		elf = realloc(elf, size + sec->sh_size + cur);
+		sec = ELF_SECTION(elf, elf->e_shstrndx);
 		strcpy((char*) elf + size + sec->sh_size, sections[i]);
 		sec->sh_size += cur;
 	}
@@ -65,6 +66,7 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 		len = strlen(sy->name) + 1;
 		elf = realloc(elf, size + len);
 		strcpy((char*) elf + size, sy->name);
+		sec = ELF_SECTION(elf, elf->e_shstrndx);
 		string_ind[i] = sec->sh_size;
 		sec->sh_size += len;
 		size += len;
@@ -89,6 +91,7 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	sym->sh_entsize = sizeof(Elf64_Sym);
 	
 	elf = realloc(elf, size + sym->sh_size);
+	sym = ELF_SECTION(elf, 3);
 	memset((char*) elf + size, 0, sym->sh_size);
 	size += sym->sh_size;
 
@@ -125,6 +128,7 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	rel->sh_entsize = sizeof(Elf64_Rela);
 	
 	elf = realloc(elf, size + rel->sh_size);
+	rel = ELF_SECTION(elf, 4);
 	memset((char*) elf + size, 0, rel->sh_size);
 	size += rel->sh_size;
 
