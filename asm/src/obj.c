@@ -14,7 +14,7 @@ size_t asm_to_obj(asm_t *as, char **out)
 
 size_t asm_to_elf_obj(asm_t *as, char **out)
 {
-	const char* sections[] = { "", ".strtab", ".text", ".symtab" };
+	const char* sections[] = { "", ".strtab", ".text", ".symtab", ".rela.text" };
 
 	size_t size = sizeof(Elf64_Ehdr);
 	Elf64_Ehdr *elf = calloc(1, size);
@@ -57,13 +57,18 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	}
 	size += sec->sh_size;
 
-	/* TODO: add all strings for symbols here */
-	const char start[] = "_start";
-	elf = realloc(elf, size + sizeof(start));
-	strcpy((char*) elf + size, start);
-	size_t start_off = sec->sh_size;
-	sec->sh_size += sizeof(start);
-	size += sizeof(start);
+	size_t *string_ind = alloca(as->sym_count * sizeof(size_t));
+	symbol_t *sy; size_t len;
+	for (size_t i = 0; i < as->sym_count; i++)
+	{
+		sy = asm_iterate_symbols(as, i);
+		len = strlen(sy->name) + 1;
+		elf = realloc(elf, size + len);
+		strcpy((char*) elf + size, sy->name);
+		string_ind[i] = sec->sh_size;
+		sec->sh_size += len;
+		size += len;
+	}
 
 	Elf64_Shdr *text = ELF_SECTION(elf, 2);
 	text->sh_type = SHT_PROGBITS;
@@ -78,36 +83,63 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	Elf64_Shdr *sym = ELF_SECTION(elf, 3);
 	sym->sh_type = SHT_SYMTAB;
 	sym->sh_offset = size;
-	/*
-	 * for some reason, libbfd cannot read the first symbol correctly.
-	 * according to the elf specification, there should be no alignment constraints
-	 * and readelf perfectly reads the first symbol as well.
-	 * in order to keep compatibility with GNU, we keep the first symbol empty.
-	 */
-	sym->sh_size = 2 * sizeof(Elf64_Sym);
+	sym->sh_size = (as->sym_count + 1) * sizeof(Elf64_Sym);
 	sym->sh_link = elf->e_shstrndx;
 	sym->sh_info = 1;
 	sym->sh_entsize = sizeof(Elf64_Sym);
 	
-	/* TODO: add all symbols here */
 	elf = realloc(elf, size + sym->sh_size);
-	Elf64_Sym *start_sym = (Elf64_Sym*) ((char*) elf + size + sizeof(Elf64_Sym));
 	memset((char*) elf + size, 0, sym->sh_size);
 	size += sym->sh_size;
 
-	symbol_t *start_label = asm_find_symbol(as, start);
-	if (!start_label || start_label->type != LABEL)
+	Elf64_Sym *esy;
+	for (size_t i = 0; i < as->sym_count; i++)
 	{
-		printf("Could not find symbol `%s` (LABEL).\n", start);
-		exit(1);
+		sy = asm_iterate_symbols(as, i);
+		esy = (Elf64_Sym*) ((char*) elf + size - (as->sym_count - i) * sizeof(Elf64_Sym));
+		
+		esy->st_name = string_ind[i];
+		esy->st_value = sy->addr;
+		esy->st_size = 1;
+		esy->st_info = ELF64_ST_INFO(STB_GLOBAL, STT_FUNC);
+
+		switch (sy->type)
+		{
+		case LABEL:
+			esy->st_shndx = 2;
+			break;
+		case EXTERN:
+			esy->st_shndx = SHN_UNDEF;
+			break;
+		default:
+			break;
+		}
+	}
+	
+	Elf64_Shdr *rel = ELF_SECTION(elf, 4);
+	rel->sh_type = SHT_RELA;
+	rel->sh_offset = size;
+	rel->sh_size = as->rel_count * sizeof(Elf64_Rela);
+	rel->sh_link = 3;
+	rel->sh_info = 2;
+	rel->sh_entsize = sizeof(Elf64_Rela);
+	
+	elf = realloc(elf, size + rel->sh_size);
+	memset((char*) elf + size, 0, rel->sh_size);
+	size += rel->sh_size;
+
+	Elf64_Rela *erel;
+	reloc_t *re;
+	for (size_t i = 0; i < as->rel_count; i++)
+	{
+		re = asm_iterate_relocs(as, i);
+		erel = (Elf64_Rela*) ((char*) elf + size - (as->rel_count - i) * sizeof(Elf64_Rela));
+		size_t sym_ind = re->sym - &as->sym[0];
+		erel->r_offset = re->addr;
+		erel->r_info = ELF64_R_INFO(sym_ind + 1, R_X86_64_PC32);
+		erel->r_addend = -4;
 	}
 
-	start_sym->st_name = start_off;
-	start_sym->st_value = start_label->addr;
-	start_sym->st_size = as->out_count;
-	start_sym->st_info = ELF64_ST_INFO(STB_GLOBAL, STT_FUNC);
-	start_sym->st_shndx = 2;
-	
 	*out = (char*) elf;
 	return size;
 }

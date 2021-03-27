@@ -13,8 +13,11 @@ op_t op[] =
 	{ "lea", RM, REG64, IMM32, 0x8D, EMPTY },
 	{ "mov", OI, REG32, IMM32, 0xB8, EMPTY },
 	{ "mov", OI, REG64, IMM64, 0xB8, EMPTY },
+	{ "xor", MR, REG64, REG64, 0x31, EMPTY },
 	{ "int", I, IMM8, EMPTY, 0xCD, 0x00 },
 	{ "syscall", ZO, EMPTY, EMPTY, 0x0F, 0x05 },
+	{ "call", D, IMM32, EMPTY, 0xE8, EMPTY },
+	{ "ret", ZO, EMPTY, EMPTY, 0xC3, EMPTY },
 	{ "db", EMPTY, IMM8, EMPTY, EMPTY, EMPTY }
 };
 
@@ -106,7 +109,7 @@ void asm_full_pass(asm_t *as)
 
 void asm_advance(asm_t *as, char *new)
 {
-	if (asm_consume_label(as))
+	if (asm_consume_label(as) || asm_consume_extern(as))
 	{
 		*new = 3;
 		return;
@@ -131,7 +134,9 @@ void asm_advance(asm_t *as, char *new)
 	else
 	{
 		as->cur.op = realloc(as->cur.op, ++as->cur.op_count * sizeof(char*));
+		as->cur.op_sym = realloc(as->cur.op_sym, as->cur.op_count * sizeof(symbol_t*));
 		as->cur.op[as->cur.op_count - 1] = as->token;
+		as->cur.op_sym[as->cur.op_count - 1] = 0;
 	}
 
 	if (!lexer_peek(as->lex))
@@ -161,6 +166,7 @@ void asm_make_instr(asm_t *as)
 		return;
 	}
 
+	symbol_t *sym;
 	char primary = op->primary;
 
 	if (IS_REG(op->op_1))
@@ -171,12 +177,12 @@ void asm_make_instr(asm_t *as)
 		/* write REX prefix */
 		if (op->op_1 & REG64)
 			asm_emit(as, 0b01001000);
-
 	}
 
 	asm_emit(as, primary);
-	
+
 	/* write ModR/M */
+	/* TODO: these need to be dynamic at some point in the future */
 	if (IS_REG(op->op_1) && op->op == RM)
 	{
 		/* mod = 00 (register-indirect), reg = as decoded, rm = 101 (RIP + disp32) */
@@ -185,11 +191,37 @@ void asm_make_instr(asm_t *as)
 		asm_emit(as, rm);
 	}
 	
+	if (IS_REG(op->op_2) && op->op == MR)
+	{
+		/* mod = 00 (register-direct), reg = as decoded, rm = 000 (r/m) */
+		char rm = 0b11000000;
+		rm |= asm_decode_reg(as, 1) << 3;
+		asm_emit(as, rm);
+	}
+	
 	if (op->secondary)
 		asm_emit(as, op->secondary);
 	
+	long imm;
 	if (IS_IMM(op->op_1))
-		asm_emit_imm(as, op->op_1, asm_decode_imm(as, 0));
+	{
+		imm = asm_decode_imm(as, 0);
+		sym = as->cur.op_sym[0];
+
+		/* TODO: can we include RIP relative addressing here aswell? */
+		if (op->op == D)
+			imm -= as->out_count + op_size(op->op_1) + op_size(op->op_2);
+
+		if (sym->type == EXTERN)
+		{
+			as->rel = realloc(as->rel, ++as->rel_count * sizeof(reloc_t));
+			as->rel[as->rel_count - 1].sym = sym;
+			as->rel[as->rel_count - 1].addr = as->out_count;
+			imm = 0;
+		}
+
+		asm_emit_imm(as, op->op_1, imm);
+	}
 
 	if (IS_IMM(op->op_2))
 		asm_emit_imm(as, op->op_2, asm_decode_imm(as, 1));
@@ -214,6 +246,32 @@ char asm_consume_label(asm_t *as)
 	sym->addr = as->out_count;
 
 	return 1;
+}
+
+char asm_consume_extern(asm_t *as)
+{
+	if (as->ext == 1)
+	{
+		as->sym = realloc(as->sym, ++as->sym_count * sizeof(symbol_t));
+
+		symbol_t *sym = &as->sym[as->sym_count - 1];
+		size_t len = strlen(as->token);
+		sym->type = EXTERN;
+		sym->name = calloc(len + 1, 1);
+		strcpy(sym->name, as->token);
+		sym->addr = 0;
+		
+		as->ext = 0;
+		return 1;
+	}
+
+	if (strcmp(as->token, "extern") == 0)
+	{
+		as->ext = 1;
+		return 1;
+	}
+
+	return 0;
 }
 
 static size_t unescape(char *s)
@@ -319,6 +377,7 @@ op_t* asm_match_op(asm_t *as)
 	}
 	
 	as->cur.op = cur_op;
+	as->cur.op_sym_count = as->cur.op_count;
 	as->cur.op_count = cur_op_count;
 
 	char *ops = alloca(as->cur.op_count * sizeof(size_t)), fail = 0;
@@ -387,6 +446,7 @@ void asm_resolve_op(asm_t *as, size_t ind)
 	if (sym)
 	{
 		size_t addr = sym->addr;
+		as->cur.op_sym[ind] = sym;
 
 		/* TODO: here we need to know the real instruction length */
 		if (rel)
@@ -483,8 +543,17 @@ void asm_emit_current_labels(asm_t *as, char *line)
 	FILE *str = open_memstream(&buf, &len);
 
 	for (size_t i = as->last_sym_count; i < as->sym_count; i++)
-		if (as->sym[i].type == LABEL)
+		switch(as->sym[i].type)
+		{
+		case LABEL:
 			fprintf(str, "%s: ", as->sym[i].name);
+			break;
+		case EXTERN:
+			fprintf(str, "%s ", as->sym[i].name);
+			break;
+		default:
+			break;
+		}
 
 	fclose(str);
 	as->last_sym_count = as->sym_count;
@@ -522,6 +591,22 @@ symbol_t* asm_find_symbol(asm_t *as, const char *name)
 	return 0;
 }
 
+symbol_t* asm_iterate_symbols(asm_t *as, size_t ind)
+{
+	if (ind >= as->sym_count)
+		return 0;
+
+	return &as->sym[ind];
+}
+
+reloc_t* asm_iterate_relocs(asm_t *as, size_t ind)
+{
+	if (ind >= as->rel_count)
+		return 0;
+
+	return &as->rel[ind];
+}
+
 char match_op(char *op)
 {
 	for (size_t i = 0; i < sizeof(reg) / sizeof(reg_t); i++)
@@ -540,5 +625,19 @@ char match_op(char *op)
 		}
 
 	return IMM8;
+}
+
+char op_size(size_t op)
+{
+	if (op & IMM64 || op & REG64)
+		return 8;
+	else if (op & IMM32 || op & REG32)
+		return 4;
+	else if (op & IMM16 || op & REG16)
+		return 2;
+	else if (op & IMM8 || op & REG8)
+		return 1;
+
+	return 0;
 }
 

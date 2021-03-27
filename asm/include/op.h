@@ -30,7 +30,9 @@ enum operand_encoding_type
 	ZO,
 	I,
 	OI,
-	RM
+	RM,
+	D,
+	MR
 };
 
 typedef struct
@@ -51,6 +53,7 @@ typedef struct
 } reg_t;
 
 char match_op(char *op);
+char op_size(size_t op);
 
 extern reg_t reg[];
 extern op_t op[];
