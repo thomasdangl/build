@@ -17,6 +17,7 @@ op_t op[] =
 	{ "mov", MR, FALSE, REG64, REG64, 0x89, EMPTY, EMPTY },
 	{ "mov", RM, FALSE, REG64, REG64, 0x8B, EMPTY, EMPTY },
 	{ "push", O, TRUE, REG64, REG64, 0x50, EMPTY, EMPTY },
+	{ "push", I, FALSE, IMM32, EMPTY, 0x68, EMPTY, EMPTY },
 	{ "pop", O, TRUE, REG64, REG64, 0x58, EMPTY, EMPTY },
 	{ "add", MI, FALSE, REG64, IMM32, 0x81, EMPTY, EMPTY },
 	{ "add", MR, FALSE, REG64, REG64, 0x01, EMPTY, EMPTY },
@@ -35,35 +36,60 @@ op_t op[] =
 	{ "syscall", ZO, FALSE, EMPTY, EMPTY, 0x0F, 0x05, EMPTY },
 	{ "call", D, FALSE, IMM32, EMPTY, 0xE8, EMPTY, EMPTY },
 	{ "ret", ZO, FALSE, EMPTY, EMPTY, 0xC3, EMPTY, EMPTY },
+	{ "ret", I, FALSE, IMM16, EMPTY, 0xC2, EMPTY, EMPTY },
 	{ "db", EMPTY, FALSE, IMM8, EMPTY, EMPTY, EMPTY, EMPTY }
 };
 
 reg_t reg[] =
 {
-	{ "rax", RAX, REG64 },
-	{ "eax", RAX, REG32 },
-	{ "ax", RAX, REG16 },
-	{ "rcx", RCX, REG64 },
-	{ "ecx", RCX, REG32 },
-	{ "cx", RCX, REG16 },
-	{ "rdx", RDX, REG64 },
-	{ "edx", RDX, REG32 },
-	{ "cx", RDX, REG16 },
-	{ "rbx", RBX, REG64 },
-	{ "ebx", RBX, REG32 },
-	{ "bx", RBX, REG16 },
-	{ "rsp", RSP, REG64 },
-	{ "esp", RSP, REG32 },
-	{ "sp", RSP, REG16 },
-	{ "rbp", RBP, REG64 },
-	{ "ebp", RBP, REG32 },
-	{ "bp", RBP, REG16 },
-	{ "rsi", RSI, REG64 },
-	{ "esi", RSI, REG32 },
-	{ "si", RSI, REG16 },
-	{ "rdi", RDI, REG64 },
-	{ "edi", RDI, REG32 },
-	{ "di", RDI, REG16 }
+	{ "rax", RAX, REG64, FALSE },
+	{ "eax", RAX, REG32, FALSE },
+	{ "ax", RAX, REG16, FALSE },
+	{ "rcx", RCX, REG64, FALSE },
+	{ "ecx", RCX, REG32, FALSE },
+	{ "cx", RCX, REG16, FALSE },
+	{ "rdx", RDX, REG64, FALSE },
+	{ "edx", RDX, REG32, FALSE },
+	{ "cx", RDX, REG16, FALSE },
+	{ "rbx", RBX, REG64, FALSE },
+	{ "ebx", RBX, REG32, FALSE },
+	{ "bx", RBX, REG16, FALSE },
+	{ "rsp", RSP, REG64, FALSE },
+	{ "esp", RSP, REG32, FALSE },
+	{ "sp", RSP, REG16, FALSE },
+	{ "rbp", RBP, REG64, FALSE },
+	{ "ebp", RBP, REG32, FALSE },
+	{ "bp", RBP, REG16, FALSE },
+	{ "rsi", RSI, REG64, FALSE },
+	{ "esi", RSI, REG32, FALSE },
+	{ "si", RSI, REG16, FALSE },
+	{ "rdi", RDI, REG64, FALSE },
+	{ "edi", RDI, REG32, FALSE },
+	{ "di", RDI, REG16, FALSE },
+	{ "r8", R8, REG64, TRUE },
+	{ "r8d", R8, REG32, TRUE },
+	{ "r8w", R8, REG16, TRUE },
+	{ "r9", R9, REG64, TRUE },
+	{ "r9d", R9, REG32, TRUE },
+	{ "r9w", R9, REG16, TRUE },
+	{ "r10", R10, REG64, TRUE },
+	{ "r10d", R10, REG32, TRUE },
+	{ "r10w", R10, REG16, TRUE },
+	{ "r11", R11, REG64, TRUE },
+	{ "r11d", R11, REG32, TRUE },
+	{ "r11w", R11, REG16, TRUE },
+	{ "r12", R12, REG64, TRUE },
+	{ "r12d", R12, REG32, TRUE },
+	{ "r12w", R12, REG16, TRUE },
+	{ "r13", R13, REG64, TRUE },
+	{ "r13d", R13, REG32, TRUE },
+	{ "r13w", R13, REG16, TRUE },
+	{ "r14", R14, REG64, TRUE },
+	{ "r14d", R14, REG32, TRUE },
+	{ "r14w", R14, REG16, TRUE },
+	{ "r15", R15, REG64, TRUE },
+	{ "r15d", R15, REG32, TRUE },
+	{ "r15w", R15, REG16, TRUE }
 };
 
 asm_t* asm_init(lexer_t *lex)
@@ -155,7 +181,15 @@ void asm_advance(asm_t *as, char *new)
 	{
 		as->cur.op = realloc(as->cur.op, ++as->cur.op_count * sizeof(dec_t));
 		as->cur.op[as->cur.op_count - 1] = (dec_t)
-			{ .op = as->token, .sym = 0, .disp = ~0, .rel = 0  };
+		{
+			.op = as->token,
+			.sym = 0,
+			.disp = ~0,
+			.rel = 0,
+			.extended = 0,
+			.sub = 0,
+			.sub_count = 0
+		};
 	}
 
 	if (!lexer_peek(as->lex))
@@ -187,49 +221,63 @@ void asm_make_instr(asm_t *as)
 	}
 
 	symbol_t *sym;
-	dec_t *dec = &as->cur.op[0];
+	enum operand_encoding_type e = op->op;
+	
+	/* swap RM to MR, makes the code following a lot easier */
+	if (e == RM)
+	{
+		dec_t tmp1 = as->cur.op[0];
+		as->cur.op[0] = as->cur.op[1];
+		as->cur.op[1] = tmp1;
+		size_t tmp2 = op->op_1;
+		op->op_1 = op->op_2;
+		op->op_2 = tmp2;
+		e = MR;
+	}
+
+	dec_t *o1 = as->cur.op_count > 0 ? &as->cur.op[0] : 0;
+	dec_t *o2 = as->cur.op_count > 1 ? &as->cur.op[1] : 0;
 	char primary = op->primary;
 
-	if (IS_REG(op->op_1))
+	if (IS_REG(op->op_1) || IS_REG(op->op_2))
 	{
-		if (op->op == O || op->op == OI)
+		if (e == O || e == OI)
 			primary += asm_decode_reg(as, 0, 0);
 		
 		/* write REX prefix */
-		if (!op->rex_long && op->op_1 & REG64)
-			asm_emit(as, 0b01001000);
+		if (!op->rex_long && (op->op_1 & REG64 || op->op_2 & REG64 || (o1 && o1->extended) || (o2 && o2->extended)))
+		{
+			char rex = 0b01001000;
+		
+			/*
+			 * the intel documentation is wrong, these two bits are required
+			 * even if no ModR/M is used. thanks for that.
+			 */
+			if (o1 && o1->extended)
+				rex |= 0b1;
+			if (o2 && o2->extended)
+				rex |= 0b1 << 2;
+			asm_emit(as, rex);
+		}
 	}
 
 	asm_emit(as, primary);
 
 	/* write ModR/M */
-	if (op->op == M || op->op == MI || op->op == MR || op->op == RM)
+	if (e == M || e == MI || e == MR)
 	{
 		char rm = 0b00000000;
 		
-		if (op->op == M || op->op == MI || op->op == MR)
-		{
-			if (IS_REG(op->op_1))
-				rm |= asm_decode_reg(as, 0, 0);
-			
-			if (IS_REG(op->op_2))
-				rm |= asm_decode_reg(as, 1, 0) << 3;
-		}
-		else if (op->op == RM)
-		{
-			dec = &as->cur.op[1];
-
-			if (IS_REG(op->op_1))
-				rm |= asm_decode_reg(as, 0, 0) << 3;
-
-			if (IS_REG(op->op_2))
-				rm |= asm_decode_reg(as, 1, 0);
-		}
+		if (IS_REG(op->op_1))
+			rm |= asm_decode_reg(as, 0, 0);
+		
+		if (IS_REG(op->op_2))
+			rm |= asm_decode_reg(as, 1, 0) << 3;
 	
-		if (!dec->rel)
+		if (!(o1 && o1->rel) && !(o2 && o2->rel))
 		{	
 			/* TODO: use 8-bit when possible */
-			if (dec->disp != ~0)
+			if ((o1 && o1->disp != ~0) || (o2 && o2->disp != ~0))
 				rm |= 0b10 << 6;
 			else
 				rm |= 0b11 << 6;
@@ -240,8 +288,15 @@ void asm_make_instr(asm_t *as)
 		rm |= op->extension << 3;
 		asm_emit(as, rm);
 		
-		if (dec->disp != ~0)
-			asm_emit_imm(as, IMM32, dec->disp);
+		if (o1 && o2 && o1->disp != ~0 && o2->disp != ~0)
+		{
+			printf("Two displacements are impossible to occur.\n");
+			exit(1);
+		}
+		else if (o1 && o1->disp != ~0)
+			asm_emit_imm(as, IMM32, o1->disp);
+		else if (o2 && o2->disp != ~0)
+			asm_emit_imm(as, IMM32, o2->disp);
 	}
 	
 	if (op->secondary)
@@ -251,21 +306,20 @@ void asm_make_instr(asm_t *as)
 	if (IS_IMM(op->op_1))
 	{
 		imm = asm_decode_imm(as, 0, 0);
-		dec = &as->cur.op[0];
 
-		if (op->op == D)
+		if (e == D)
 		{
 			imm -= as->out_count + op_size(op->op_1) + op_size(op->op_2);
-			dec->rel = 1;
+			o1->rel = 1;
 		}
 
-		if (dec && dec->sym && dec->sym->type == EXTERN)
+		if (o1->sym && (o1->sym->type == EXTERN || e != D))
 		{
 			as->rel = realloc(as->rel, ++as->rel_count * sizeof(reloc_t));
 			as->rel[as->rel_count - 1] = (reloc_t)
 			{
-				.sym = dec->sym,
-				.type = dec->rel ? RELATIVE : ABSOLUTE,
+				.type = o1->rel ? RELATIVE : ABSOLUTE,
+				.sym = o1->sym - &as->sym[0],
 				.addr = as->out_count - as->section_start
 			};
 			imm = 0;
@@ -277,21 +331,31 @@ void asm_make_instr(asm_t *as)
 	if (IS_IMM(op->op_2))
 	{
 		imm = asm_decode_imm(as, 1, 0);
-		dec = &as->cur.op[1];
 		
-		if (dec && dec->sym)
+		if (o2->sym && (o2->sym->type == EXTERN || e != D))
 		{
 			as->rel = realloc(as->rel, ++as->rel_count * sizeof(reloc_t));
 			as->rel[as->rel_count - 1] = (reloc_t)
 			{
-				.sym = dec->sym,
-				.type = dec->rel ? RELATIVE : ABSOLUTE,
+				.type = o2->rel ? RELATIVE : ABSOLUTE,
+				.sym = o2->sym - &as->sym[0],
 				.addr = as->out_count - as->section_start
 			};
 			imm = 0;
 		}
 		
 		asm_emit_imm(as, op->op_2, imm);
+	}
+
+	if (op->op == RM)
+	{
+		dec_t tmp1 = as->cur.op[0];
+		as->cur.op[0] = as->cur.op[1];
+		as->cur.op[1] = tmp1;
+		size_t tmp2 = op->op_1;
+		op->op_1 = op->op_2;
+		op->op_2 = tmp2;
+		e = MR;
 	}
 
 	memset(&as->cur, 0, sizeof(instr_t));
@@ -594,6 +658,13 @@ void asm_resolve_op(asm_t *as, size_t i, size_t j)
 	}
 
 	dec->sub[j] = op;
+	
+	for (size_t i = 0; i < sizeof(reg) / sizeof(reg_t); i++)
+		if (reg[i].extended && !strcasecmp(reg[i].mnemonic, op))
+		{
+			dec->extended = 1;
+			return;
+		}
 }
 
 char asm_decode_reg(asm_t *as, size_t i, size_t j)

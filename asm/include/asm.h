@@ -34,8 +34,8 @@ typedef struct
 
 typedef struct
 {
-	symbol_t *sym;
 	enum reloc_type type;
+	size_t sym;
 	size_t addr;
 
 } reloc_t;
@@ -46,6 +46,7 @@ typedef struct
 	symbol_t *sym;
 	int disp;
 	char rel;
+	char extended;
 	char **sub;
 	size_t sub_count;
 } dec_t;

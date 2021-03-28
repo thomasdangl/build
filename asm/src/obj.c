@@ -157,21 +157,20 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	{
 		re = asm_iterate_relocs(as, i);
 		erel = (Elf64_Rela*) ((char*) elf + size - (as->rel_count - i) * sizeof(Elf64_Rela));
-		size_t sym_ind = re->sym - &as->sym[0];
 		erel->r_offset = re->addr;
 
 		switch (re->type)
 		{
 		case ABSOLUTE:
-			erel->r_info = ELF64_R_INFO(sym_ind + 1, R_X86_64_64);
+			erel->r_info = ELF64_R_INFO(re->sym + 1, R_X86_64_64);
 			erel->r_addend = 0;
 			break;
 		case RELATIVE:
-			erel->r_info = ELF64_R_INFO(sym_ind + 1, R_X86_64_PC32);
+			erel->r_info = ELF64_R_INFO(re->sym + 1, R_X86_64_PC32);
 			erel->r_addend = -4;
 			break;
 		default:
-			printf("Unhandled relocation type for `%s`.\n", re->sym->name);
+			printf("Unhandled relocation type.\n");
 			exit(1);
 		}
 	}

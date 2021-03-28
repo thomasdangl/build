@@ -23,6 +23,14 @@
 #define RBP 0b101
 #define RSI 0b110
 #define RDI 0b111
+#define R8 0b000
+#define R9 0b001
+#define R10 0b010
+#define R11 0b011
+#define R12 0b100
+#define R13 0b101
+#define R14 0b110
+#define R15 0b111
 
 #define TRUE (1)
 #define FALSE (0)
@@ -58,6 +66,7 @@ typedef struct
 	char* mnemonic;
 	size_t val;
 	size_t size;
+	char extended;
 } reg_t;
 
 char match_op(char *op);
