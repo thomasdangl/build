@@ -12,7 +12,7 @@ main:
 push rbp
 mov rbp, rsp
 
-lea rdi, [hello]
+mov rdi, hello
 mov rsi, 1
 xor rax, rax
 call printf

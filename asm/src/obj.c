@@ -14,7 +14,7 @@ size_t asm_to_obj(asm_t *as, char **out)
 
 size_t asm_to_elf_obj(asm_t *as, char **out)
 {
-	const char* sections[] = { "", ".strtab", ".text", ".symtab", ".rela.text" };
+	const char* sections[] = { "", ".strtab", ".text", ".data", ".symtab", ".rela.text" };
 
 	size_t size = sizeof(Elf64_Ehdr);
 	Elf64_Ehdr *elf = calloc(1, size);
@@ -59,7 +59,7 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	size += sec->sh_size;
 
 	size_t *string_ind = alloca(as->sym_count * sizeof(size_t));
-	symbol_t *sy; size_t len;
+	symbol_t *sy; section_t *se; size_t len;
 	for (size_t i = 0; i < as->sym_count; i++)
 	{
 		sy = asm_iterate_symbols(as, i);
@@ -72,17 +72,26 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 		size += len;
 	}
 
+	section_t *text_s = asm_find_section(as, ".text"),
+		  *data_s = asm_find_section(as, ".data");
+
 	Elf64_Shdr *text = ELF_SECTION(elf, 2);
 	text->sh_type = SHT_PROGBITS;
 	text->sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-	text->sh_offset = size;
-	text->sh_size = as->out_count;
+	text->sh_offset = size + (text_s ? text_s->addr : 0);
+	text->sh_size = text_s ? text_s->size : 0;
+	
+	Elf64_Shdr *data = ELF_SECTION(elf, 3);
+	data->sh_type = SHT_PROGBITS;
+	data->sh_flags = SHF_ALLOC | SHF_WRITE;
+	data->sh_offset = size + (data_s ? data_s->addr : 0);
+	data->sh_size = data_s ? data_s->size : 0;
 
 	elf = realloc(elf, size + as->out_count);
 	memcpy((char*) elf + size, as->out, as->out_count);
 	size += as->out_count;
 
-	Elf64_Shdr *sym = ELF_SECTION(elf, 3);
+	Elf64_Shdr *sym = ELF_SECTION(elf, 4);
 	sym->sh_type = SHT_SYMTAB;
 	sym->sh_offset = size;
 	sym->sh_size = (as->sym_count + 1) * sizeof(Elf64_Sym);
@@ -91,7 +100,7 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	sym->sh_entsize = sizeof(Elf64_Sym);
 	
 	elf = realloc(elf, size + sym->sh_size);
-	sym = ELF_SECTION(elf, 3);
+	sym = ELF_SECTION(elf, 4);
 	memset((char*) elf + size, 0, sym->sh_size);
 	size += sym->sh_size;
 
@@ -99,6 +108,7 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	for (size_t i = 0; i < as->sym_count; i++)
 	{
 		sy = asm_iterate_symbols(as, i);
+		se = &as->sec[sy->section];
 		esy = (Elf64_Sym*) ((char*) elf + size - (as->sym_count - i) * sizeof(Elf64_Sym));
 		
 		esy->st_name = string_ind[i];
@@ -109,7 +119,16 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 		switch (sy->type)
 		{
 		case LABEL:
-			esy->st_shndx = 2;
+			if (se == text_s)
+				esy->st_shndx = 2;
+			else if (se == data_s)
+				esy->st_shndx = 3;
+			else
+			{
+				printf("Encountered label (%s:%s) outside of defined sections!\n",
+						se->name, sy->name);
+				exit(1);
+			}
 			break;
 		case EXTERN:
 			esy->st_shndx = SHN_UNDEF;
@@ -119,16 +138,16 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 		}
 	}
 	
-	Elf64_Shdr *rel = ELF_SECTION(elf, 4);
+	Elf64_Shdr *rel = ELF_SECTION(elf, 5);
 	rel->sh_type = SHT_RELA;
 	rel->sh_offset = size;
 	rel->sh_size = as->rel_count * sizeof(Elf64_Rela);
-	rel->sh_link = 3;
+	rel->sh_link = 4;
 	rel->sh_info = 2;
 	rel->sh_entsize = sizeof(Elf64_Rela);
 	
 	elf = realloc(elf, size + rel->sh_size);
-	rel = ELF_SECTION(elf, 4);
+	rel = ELF_SECTION(elf, 5);
 	memset((char*) elf + size, 0, rel->sh_size);
 	size += rel->sh_size;
 
@@ -140,8 +159,21 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 		erel = (Elf64_Rela*) ((char*) elf + size - (as->rel_count - i) * sizeof(Elf64_Rela));
 		size_t sym_ind = re->sym - &as->sym[0];
 		erel->r_offset = re->addr;
-		erel->r_info = ELF64_R_INFO(sym_ind + 1, R_X86_64_PC32);
-		erel->r_addend = -4;
+
+		switch (re->type)
+		{
+		case ABSOLUTE:
+			erel->r_info = ELF64_R_INFO(sym_ind + 1, R_X86_64_64);
+			erel->r_addend = 0;
+			break;
+		case RELATIVE:
+			erel->r_info = ELF64_R_INFO(sym_ind + 1, R_X86_64_PC32);
+			erel->r_addend = -4;
+			break;
+		default:
+			printf("Unhandled relocation type for `%s`.\n", re->sym->name);
+			exit(1);
+		}
 	}
 
 	*out = (char*) elf;

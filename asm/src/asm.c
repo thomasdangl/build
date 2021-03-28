@@ -71,7 +71,6 @@ asm_t* asm_init(lexer_t *lex)
 	asm_t *as =  calloc(1, sizeof(asm_t));
 	as->lex = lex;
 	as->out_count = as->last_out_count = 0;
-	as->section = ".text";
 	return as;
 }
 
@@ -119,6 +118,9 @@ void asm_full_pass(asm_t *as)
 		}
 	}
 
+	/* finalize the last section */
+	asm_close_section(as);
+
 	/* there might be even more empty locs with no token for the lexer to catch. */
 	for (size_t i = loc + 1; i < as->lex->loc_count; i++)
 		printf("%d\n", i);
@@ -134,7 +136,7 @@ void asm_advance(asm_t *as, char *new)
 
 	if (strcmp(as->token, "section") == 0)
 	{
-		as->section = 0;
+		asm_close_section(as);
 		*new = 3;
 		return;
 	}
@@ -142,6 +144,7 @@ void asm_advance(asm_t *as, char *new)
 	if (!as->section)
 	{
 		as->section = as->token;
+		as->section_start = as->out_count;
 		*new = 3;
 		return;
 	}
@@ -251,13 +254,20 @@ void asm_make_instr(asm_t *as)
 		dec = &as->cur.op[0];
 
 		if (op->op == D)
+		{
 			imm -= as->out_count + op_size(op->op_1) + op_size(op->op_2);
+			dec->rel = 1;
+		}
 
 		if (dec && dec->sym && dec->sym->type == EXTERN)
 		{
 			as->rel = realloc(as->rel, ++as->rel_count * sizeof(reloc_t));
-			as->rel[as->rel_count - 1].sym = dec->sym;
-			as->rel[as->rel_count - 1].addr = as->out_count;
+			as->rel[as->rel_count - 1] = (reloc_t)
+			{
+				.sym = dec->sym,
+				.type = dec->rel ? RELATIVE : ABSOLUTE,
+				.addr = as->out_count - as->section_start
+			};
 			imm = 0;
 		}
 
@@ -267,9 +277,19 @@ void asm_make_instr(asm_t *as)
 	if (IS_IMM(op->op_2))
 	{
 		imm = asm_decode_imm(as, 1, 0);
+		dec = &as->cur.op[1];
 		
-		if (as->cur.op_count > 1 && as->cur.op[1].rel)
-			imm -= as->out_count + op_size(op->op_2);
+		if (dec && dec->sym)
+		{
+			as->rel = realloc(as->rel, ++as->rel_count * sizeof(reloc_t));
+			as->rel[as->rel_count - 1] = (reloc_t)
+			{
+				.sym = dec->sym,
+				.type = dec->rel ? RELATIVE : ABSOLUTE,
+				.addr = as->out_count - as->section_start
+			};
+			imm = 0;
+		}
 		
 		asm_emit_imm(as, op->op_2, imm);
 	}
@@ -285,13 +305,13 @@ char asm_consume_label(asm_t *as)
 		return 0;
 
 	as->sym = realloc(as->sym, ++as->sym_count * sizeof(symbol_t));
-
 	symbol_t *sym = &as->sym[as->sym_count - 1];
 	sym->type = LABEL;
 	sym->name = calloc(len + 1, 1);
 	strcpy(sym->name, as->token);
 	sym->name[len - 1] = '\0';
-	sym->addr = as->out_count;
+	sym->addr = as->out_count - as->section_start;
+	sym->section = ~0;
 
 	return 1;
 }
@@ -308,6 +328,7 @@ char asm_consume_extern(asm_t *as)
 		sym->name = calloc(len + 1, 1);
 		strcpy(sym->name, as->token);
 		sym->addr = 0;
+		sym->section = ~0;
 		
 		as->ext = 0;
 		return 1;
@@ -320,6 +341,34 @@ char asm_consume_extern(asm_t *as)
 	}
 
 	return 0;
+}
+
+void asm_close_section(asm_t *as)
+{
+	if (!as->section)
+		return;
+
+	for (size_t i = 0; i < as->sec_count; i++)
+		if (strcasecmp(as->sec[i].name, as->section) == 0)
+		{
+			printf("Tried to close section %s which was already closed.\n", as->section);
+			exit(1);
+		}
+	
+	as->sec = realloc(as->sec, ++as->sec_count * sizeof(section_t));
+	as->sec[as->sec_count - 1] = (section_t)
+	{
+		.name = as->section,
+		.addr = as->section_start,
+		.size = as->out_count - as->section_start
+	};
+
+	for (size_t i = 0; i < as->sym_count; i++)
+		if (as->sym[i].section == ~0)
+			as->sym[i].section = as->sec_count - 1;
+	
+	as->section = 0;
+	as->section_start = 0;
 }
 
 static size_t unescape(char *s)
@@ -710,6 +759,15 @@ reloc_t* asm_iterate_relocs(asm_t *as, size_t ind)
 		return 0;
 
 	return &as->rel[ind];
+}
+
+section_t* asm_find_section(asm_t *as, const char *name)
+{
+	for (size_t i = 0; i < as->sec_count; i++)
+		if (strcmp(as->sec[i].name, name) == 0)
+			return &as->sec[i];
+
+	return 0;
 }
 
 char match_op(char *op)

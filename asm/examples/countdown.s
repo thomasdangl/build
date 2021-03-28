@@ -1,4 +1,6 @@
 
+section .text
+
 str: db "%d\n"
 
 extern printf
