@@ -26,13 +26,19 @@ typedef struct
 
 typedef struct
 {
+	char *op;
+	symbol_t *sym;
+	int disp;
+	char rel;
+	char **sub;
+	size_t sub_count;
+} dec_t;
+
+typedef struct
+{
 	char *mnemonic;
-	char **op;
+	dec_t *op;
 	size_t op_count;
-	symbol_t **op_sym;
-	int *op_disp;
-	char *op_rel;
-	size_t op_count2;
 } instr_t;
 
 typedef struct
@@ -64,9 +70,9 @@ char asm_consume_label(asm_t *as);
 char asm_consume_extern(asm_t *as);
 
 op_t* asm_match_op(asm_t *as);
-void asm_resolve_op(asm_t *as, size_t ind);
-char asm_decode_reg(asm_t *as, size_t ind);
-long asm_decode_imm(asm_t *as, size_t ind);
+void asm_resolve_op(asm_t *as, size_t i, size_t j);
+char asm_decode_reg(asm_t *as, size_t i, size_t j);
+long asm_decode_imm(asm_t *as, size_t i, size_t j);
 
 void asm_emit(asm_t *as, char byte);
 void asm_emit_imm(asm_t *as, size_t op, size_t val);

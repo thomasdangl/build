@@ -150,14 +150,9 @@ void asm_advance(asm_t *as, char *new)
 		as->cur.mnemonic = as->token;
 	else
 	{
-		as->cur.op = realloc(as->cur.op, ++as->cur.op_count * sizeof(char*));
-		as->cur.op_sym = realloc(as->cur.op_sym, as->cur.op_count * sizeof(symbol_t*));
-		as->cur.op_disp = realloc(as->cur.op_disp, as->cur.op_count * sizeof(int));
-		as->cur.op_rel = realloc(as->cur.op_rel, as->cur.op_count * sizeof(int));
-		as->cur.op[as->cur.op_count - 1] = as->token;
-		as->cur.op_sym[as->cur.op_count - 1] = 0;
-		as->cur.op_disp[as->cur.op_count - 1] = ~0;
-		as->cur.op_rel[as->cur.op_count - 1] = 0;
+		as->cur.op = realloc(as->cur.op, ++as->cur.op_count * sizeof(dec_t));
+		as->cur.op[as->cur.op_count - 1] = (dec_t)
+			{ .op = as->token, .sym = 0, .disp = ~0, .rel = 0  };
 	}
 
 	if (!lexer_peek(as->lex))
@@ -182,19 +177,20 @@ void asm_make_instr(asm_t *as)
 	if (op->primary == EMPTY)
 	{
 		for (size_t i = 0; i < as->cur.op_count; i++)
-			asm_emit_imm(as, op->op_1, asm_decode_imm(as, i));
+			for (size_t j = 0; j < as->cur.op[i].sub_count; j++)
+				asm_emit_imm(as, op->op_1, asm_decode_imm(as, i, j));
 		memset(&as->cur, 0, sizeof(instr_t));
 		return;
 	}
 
 	symbol_t *sym;
-	int *disp;
+	dec_t *dec = &as->cur.op[0];
 	char primary = op->primary;
 
 	if (IS_REG(op->op_1))
 	{
 		if (op->op == O || op->op == OI)
-			primary += asm_decode_reg(as, 0);
+			primary += asm_decode_reg(as, 0, 0);
 		
 		/* write REX prefix */
 		if (!op->rex_long && op->op_1 & REG64)
@@ -204,87 +200,63 @@ void asm_make_instr(asm_t *as)
 	asm_emit(as, primary);
 
 	/* write ModR/M */
-	/* TODO: these need to be dynamic at some point in the future */
-	
-	if (IS_REG(op->op_1) && (op->op == M || op->op == MI))
-	{
-		/* mod = 11 (register-direct), reg = as decoded, rm = as decoded */
-		char rm = 0b11000000;
-		rm |= op->extension << 3;
-		rm |= asm_decode_reg(as, 0);
-		asm_emit(as, rm);
-	}
-	
-	if (IS_REG(op->op_1) && op->op == MR)
+	if (op->op == M || op->op == MI || op->op == MR || op->op == RM)
 	{
 		char rm = 0b00000000;
-		disp = &as->cur.op_disp[0];
-
-		if (IS_REG(op->op_2))
+		
+		if (op->op == M || op->op == MI || op->op == MR)
 		{
-			rm |= asm_decode_reg(as, 0);
-			rm |= asm_decode_reg(as, 1) << 3;
+			if (IS_REG(op->op_1))
+				rm |= asm_decode_reg(as, 0, 0);
+			
+			if (IS_REG(op->op_2))
+				rm |= asm_decode_reg(as, 1, 0) << 3;
+		}
+		else if (op->op == RM)
+		{
+			dec = &as->cur.op[1];
 
+			if (IS_REG(op->op_1))
+				rm |= asm_decode_reg(as, 0, 0) << 3;
+
+			if (IS_REG(op->op_2))
+				rm |= asm_decode_reg(as, 1, 0);
+		}
+	
+		if (!dec->rel)
+		{	
 			/* TODO: use 8-bit when possible */
-			if (*disp != ~0)
+			if (dec->disp != ~0)
 				rm |= 0b10 << 6;
 			else
 				rm |= 0b11 << 6;
 		}
 		else
-			rm |= asm_decode_reg(as, 0) << 3;
-
-		asm_emit(as, rm);
-		
-		if (*disp != ~0)
-			asm_emit_imm(as, IMM32, *disp);
-	}
-
-	if (IS_REG(op->op_1) && op->op == RM)
-	{
-		char rm = 0b00000000;
-		disp = &as->cur.op_disp[1];
-
-		rm |= asm_decode_reg(as, 0) << 3;
-
-		if (IS_REG(op->op_2))
-		{
-			rm |= asm_decode_reg(as, 1);
-
-			/* TODO: use 8-bit when possible */
-			if (*disp != ~0)
-				rm |= 0b10 << 6;
-			else
-				rm |= 0b11 << 6;
-		}
-		else if (as->cur.op_rel[1])
 			rm |= 0b101;
-		else
-			rm |= asm_decode_reg(as, 0) << 3;
 
+		rm |= op->extension << 3;
 		asm_emit(as, rm);
 		
-		if (*disp != ~0)
-			asm_emit_imm(as, IMM32, *disp);
+		if (dec->disp != ~0)
+			asm_emit_imm(as, IMM32, dec->disp);
 	}
-
+	
 	if (op->secondary)
 		asm_emit(as, op->secondary);
 	
 	long imm;
 	if (IS_IMM(op->op_1))
 	{
-		imm = asm_decode_imm(as, 0);
-		sym = as->cur.op_sym[0];
+		imm = asm_decode_imm(as, 0, 0);
+		dec = &as->cur.op[0];
 
-		/* TODO: can we include RIP relative addressing here aswell? */
 		if (op->op == D)
 			imm -= as->out_count + op_size(op->op_1) + op_size(op->op_2);
 
-		if (sym->type == EXTERN)
+		if (dec && dec->sym && dec->sym->type == EXTERN)
 		{
 			as->rel = realloc(as->rel, ++as->rel_count * sizeof(reloc_t));
-			as->rel[as->rel_count - 1].sym = sym;
+			as->rel[as->rel_count - 1].sym = dec->sym;
 			as->rel[as->rel_count - 1].addr = as->out_count;
 			imm = 0;
 		}
@@ -293,7 +265,14 @@ void asm_make_instr(asm_t *as)
 	}
 
 	if (IS_IMM(op->op_2))
-		asm_emit_imm(as, op->op_2, asm_decode_imm(as, 1));
+	{
+		imm = asm_decode_imm(as, 1, 0);
+		
+		if (as->cur.op_count > 1 && as->cur.op[1].rel)
+			imm -= as->out_count + op_size(op->op_2);
+		
+		asm_emit_imm(as, op->op_2, imm);
+	}
 
 	memset(&as->cur, 0, sizeof(instr_t));
 }
@@ -407,56 +386,55 @@ static size_t unescape(char *s)
 
 op_t* asm_match_op(asm_t *as)
 {
-	size_t cur_op_count = 0;
-	char **cur_op = 0;
-	
 	/* special case for string literals */
-	for (size_t i = 0; i < as->cur.op_count; i++)
-	{		
-		char *cur = strdup(as->cur.op[i]);
-		unescape(cur);
-
-		if (cur[0] == '\"')
-		{
-			for (size_t j = 1; j < strlen(cur) - 1; j++)
-			{
-				cur_op = realloc(cur_op, ++cur_op_count * sizeof(char*));
-				cur_op[cur_op_count - 1] = calloc(5, 1);
-				sprintf(cur_op[cur_op_count - 1], "0x%.2x", cur[j]);
-			}
-
-			cur_op = realloc(cur_op, ++cur_op_count * sizeof(char*));
-			cur_op[cur_op_count - 1] = calloc(2, 1);
-			cur_op[cur_op_count - 1][0] = '0';
-		}
-		else if (cur[0] == '_' && cur[1] == '\"')
-		{
-			for (size_t j = 2; j < strlen(cur) - 1; j++)
-			{
-				cur_op = realloc(cur_op, ++cur_op_count * sizeof(char*));
-				cur_op[cur_op_count - 1] = calloc(5, 1);
-				sprintf(cur_op[cur_op_count - 1], "0x%.2x", cur[j]);
-			}
-		}
-		else
-		{
-			cur_op = realloc(cur_op, ++cur_op_count * sizeof(char*));
-			cur_op[cur_op_count - 1] = cur;
-		}
-	}
-	
-	as->cur.op = cur_op;
-	as->cur.op_count2 = as->cur.op_count;
-	as->cur.op_count = cur_op_count;
-
-	char *ops = alloca(as->cur.op_count * sizeof(size_t)), fail = 0;
-	op_t *cur;
+	dec_t *dec;
+	char *dup;
+	size_t sub_count = 0;
 
 	for (size_t i = 0; i < as->cur.op_count; i++)
 	{
-		asm_resolve_op(as, i);
-		ops[i] = match_op(as->cur.op[i]);
+		dec = &as->cur.op[i];
+		dup = strdup(dec->op);
+		unescape(dup);
+
+		if (dup[0] == '\"')
+		{
+			for (size_t j = 1; j < strlen(dup) - 1; j++)
+			{
+				dec->sub = realloc(dec->sub, ++dec->sub_count * sizeof(char*));
+				dec->sub[dec->sub_count - 1] = calloc(5, 1);
+				sprintf(dec->sub[dec->sub_count - 1], "0x%.2x", dup[j]);
+			}
+
+			dec->sub = realloc(dec->sub, ++dec->sub_count * sizeof(char*));
+			dec->sub[dec->sub_count - 1] = calloc(2, 1);
+			dec->sub[dec->sub_count - 1][0] = '0';
+		}
+		else if (dup[0] == '_' && dup[1] == '\"')
+			for (size_t j = 2; j < strlen(dup) - 1; j++)
+			{
+				dec->sub = realloc(dec->sub, ++dec->sub_count * sizeof(char*));
+				dec->sub[dec->sub_count - 1] = calloc(5, 1);
+				sprintf(dec->sub[dec->sub_count - 1], "0x%.2x", dup[j]);
+			}
+		else
+		{
+			dec->sub = realloc(dec->sub, ++dec->sub_count * sizeof(char*));
+			dec->sub[dec->sub_count - 1] = dup;
+		}
+		
+		sub_count += dec->sub_count;
 	}
+	
+	char *ops = alloca(sub_count * sizeof(size_t)), fail = 0;
+	op_t *cur;
+
+	for (size_t i = 0; i < as->cur.op_count; i++)
+		for (size_t j = 0; j < as->cur.op[i].sub_count; j++)
+		{
+			asm_resolve_op(as, i, j);
+			ops[i] = match_op(as->cur.op[i].sub[j]);
+		}
 
 	for (size_t i = 0; i < sizeof(op) / sizeof(op_t); i++)
 	{
@@ -468,7 +446,7 @@ op_t* asm_match_op(asm_t *as)
 		/* special case for pseudo-ops */
 		if (cur->primary == EMPTY)
 		{
-			for (size_t j = 0; j < as->cur.op_count; j++)
+			for (size_t j = 0; j < sub_count; j++)
 				if (!IS_IMM(ops[0]))
 				{
 					fail = 1;
@@ -487,7 +465,7 @@ op_t* asm_match_op(asm_t *as)
 				continue;
 
 			/* r/x matching? */
-			if (cur->op == MR && as->cur.op_disp[1] != ~0)
+			if (cur->op == MR && as->cur.op[1].disp != ~0)
 				continue;
 		}
 
@@ -499,7 +477,7 @@ op_t* asm_match_op(asm_t *as)
 				continue;
 			
 			/* r/x matching? */
-			if (cur->op == RM && as->cur.op_disp[0] != ~0)
+			if (cur->op == RM && as->cur.op[0].disp != ~0)
 				continue;
 		}
 		
@@ -509,36 +487,43 @@ op_t* asm_match_op(asm_t *as)
 	return 0;
 }
 
-void asm_resolve_op(asm_t *as, size_t ind)
+void asm_resolve_op(asm_t *as, size_t i, size_t j)
 {
-	if (ind >= as->cur.op_count)
+	if (i >= as->cur.op_count)
 	{
-		printf("Attempted to solve non-existing operand at index %d.\n", ind);
+		printf("Attempted to resolve non-existing operand at index %d.\n", i);
 		exit(1);
 	}
 
-	char *op = as->cur.op[ind], *sign;
-	int *disp = &as->cur.op_disp[ind];
+	dec_t *dec = &as->cur.op[i];
+
+	if (j >= dec->sub_count)
+	{
+		printf("Attempted to resolve non-existing sub-operand of %d at index %d.\n", i, j);
+		exit(1);
+	}
+
+	char *op = dec->sub[j], *sign;
 	size_t len = strlen(op);
 
 	if (len > 2 && op[0] == '[' && op[len - 1] == ']')
 	{
 		op[len - 1] = '\0';
 		op++;
-		*disp = 0;
+		dec->disp = 0;
 
 		if (sign = strchr(op, '+'))
 		{
-			as->cur.op[ind] = sign + 1;
-			*disp = asm_decode_imm(as, ind);
-			as->cur.op[ind] = op;
+			dec->sub[j] = sign + 1;
+			dec->disp = asm_decode_imm(as, i, j);
+			dec->sub[j] = op;
 			*sign = '\0';
 		}
 		else if (sign = strchr(op, '-'))
 		{
-			as->cur.op[ind] = sign + 1;
-			*disp = -asm_decode_imm(as, ind);
-			as->cur.op[ind] = op;
+			dec->sub[j] = sign + 1;
+			dec->disp = -asm_decode_imm(as, i, j);
+			dec->sub[j] = op;
 			*sign = '\0';
 		}
 	}
@@ -547,63 +532,78 @@ void asm_resolve_op(asm_t *as, size_t ind)
 	if (sym)
 	{
 		size_t addr = sym->addr;
-		as->cur.op_sym[ind] = sym;
+		dec->sym = sym;
 
-		/* TODO: can we move this to the place we calculate relative calls? */
-		if (*disp == 0)
+		if (dec->disp == 0)
 		{
-			addr -= as->out_count + 7;
-			*disp = ~0;
-			as->cur.op_rel[ind] = 1;
+			dec->disp = ~0;
+			dec->rel = 1;
 		}
 
 		op = calloc(19, 1);
 		sprintf(op, "0x%.16x", addr);
 	}
 
-	as->cur.op[ind] = op;
+	dec->sub[j] = op;
 }
 
-char asm_decode_reg(asm_t *as, size_t ind)
+char asm_decode_reg(asm_t *as, size_t i, size_t j)
 {
-	if (ind >= as->cur.op_count)
+	if (i >= as->cur.op_count)
 	{
-		printf("Attempted to decode non-existing register at index %d.\n", ind);
+		printf("Attempted to decode non-existing register at index %d.\n", i);
 		exit(1);
 	}
 
-	for (size_t i = 0; i < sizeof(reg) / sizeof(reg_t); i++)
-		if (!strcasecmp(reg[i].mnemonic, as->cur.op[ind]))
-			return reg[i].val;
+	dec_t *dec = &as->cur.op[i];
 
-	printf("Unknown register `%s` to decode.", as->cur.op[ind]);
+	if (j >= dec->sub_count)
+	{
+		printf("Attempted to decode non-existing sub-register of %d at index %d.\n", i, j);
+		exit(1);
+	}
+
+	for (size_t t = 0; t < sizeof(reg) / sizeof(reg_t); t++)
+		if (!strcasecmp(reg[t].mnemonic, dec->sub[j]))
+			return reg[t].val;
+
+	printf("Unknown register `%s` to decode.", dec->sub[j]);
 	exit(1);
 	return 0xFF;
 }
 
-long asm_decode_imm(asm_t *as, size_t ind)
+long asm_decode_imm(asm_t *as, size_t i, size_t j)
 {
-	if (ind >= as->cur.op_count)
+	if (i >= as->cur.op_count)
 	{
-		printf("Attempted to decode non-existing immediate value at index %d.\n", ind);
+		printf("Attempted to decode non-existing immediate at index %d.\n", i);
 		exit(1);
 	}
 
-	long dec;
+	dec_t *dec = &as->cur.op[i];
+
+	if (j >= dec->sub_count)
+	{
+		printf("Attempted to decode non-existing sub-immediate of %d at index %d.\n", i, j);
+		exit(1);
+	}
+
+	char *op = dec->sub[j];
+	long res;
 	errno = 0;
 	
-	if (as->cur.op[ind][0] == '0' && as->cur.op[ind][1] == 'x')
-		dec = strtoumax(as->cur.op[ind] + 2, 0, 16);
+	if (op[0] == '0' && op[1] == 'x')
+		res = strtoumax(op + 2, 0, 16);
 	else
-		dec = strtoumax(as->cur.op[ind], 0, 10);
+		res = strtoumax(op, 0, 10);
 	
-	if (dec == UINTMAX_MAX && errno == ERANGE)
+	if (res == UINTMAX_MAX && errno == ERANGE)
 	{
-		printf("Attempted to decode huge immediate value at index %d.\n", ind);
+		printf("Attempted to decode huge immediate value at index %d, %d.\n", i, j);
 		exit(1);
 	}
 
-	return dec;
+	return res;
 }
 
 void asm_emit(asm_t *as, char byte)
