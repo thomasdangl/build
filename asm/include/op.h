@@ -69,8 +69,8 @@ typedef struct
 	char extended;
 } reg_t;
 
-char match_op(char *op);
 char op_size(size_t op);
+size_t imm_size(long long op);
 
 extern reg_t reg[];
 extern op_t op[];

@@ -92,7 +92,7 @@ char asm_consume_extern(asm_t *as);
 void asm_close_section(asm_t *as);
 
 op_t* asm_match_op(asm_t *as);
-void asm_resolve_op(asm_t *as, size_t i, size_t j);
+size_t asm_resolve_op(asm_t *as, size_t i, size_t j);
 char asm_decode_reg(asm_t *as, size_t i, size_t j);
 long asm_decode_imm(asm_t *as, size_t i, size_t j);
 

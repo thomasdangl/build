@@ -8,35 +8,81 @@
 
 #define is_odigit(c)  ('0' <= c && c <= '7')
 
+	/* mn | Op/En | REX long | OP1 | OP2 | CODE_PRIMARY | CODE_SECONDARY | CODE_EXTENSION */
 op_t op[] =
 {
-	/* mn | Op/En | REX long | OP1 | OP2 | CODE_PRIMARY | CODE_SECONDARY | CODE_EXTENSION */
+	/*
+	 * NOTE: we do not explicitly pick the smallest possible instruction,
+	 * rather, we pick the first instruction that fits all operands.
+	 * to produce the best possible output, the instructions below should
+	 * be ordered by ascending instruction size.
+	 */
+
+	/* LEA — Load Effective Address */
+	{ "lea", RM, FALSE, REG16, IMM16, 0x8D, EMPTY, EMPTY },
+	{ "lea", RM, FALSE, REG32, IMM32, 0x8D, EMPTY, EMPTY },
 	{ "lea", RM, FALSE, REG64, IMM32, 0x8D, EMPTY, EMPTY },
+
+	/* MOV - Move */
 	{ "mov", OI, FALSE, REG32, IMM32, 0xB8, EMPTY, EMPTY },
+	{ "mov", MI, FALSE, REG64, IMM32, 0xC7, EMPTY, EMPTY },
 	{ "mov", OI, FALSE, REG64, IMM64, 0xB8, EMPTY, EMPTY },
 	{ "mov", MR, FALSE, REG64, REG64, 0x89, EMPTY, EMPTY },
 	{ "mov", RM, FALSE, REG64, REG64, 0x8B, EMPTY, EMPTY },
+
+	/* PUSH — Push Word, Doubleword or Quadword Onto the Stack */
 	{ "push", O, TRUE, REG64, REG64, 0x50, EMPTY, EMPTY },
 	{ "push", I, FALSE, IMM32, EMPTY, 0x68, EMPTY, EMPTY },
+
+	/* POP — Pop a Value from the Stack */
 	{ "pop", O, TRUE, REG64, REG64, 0x58, EMPTY, EMPTY },
+
+	/* ADD — Add */
+	{ "add", MI, FALSE, REG64, IMM8, 0x83, EMPTY, EMPTY },
 	{ "add", MI, FALSE, REG64, IMM32, 0x81, EMPTY, EMPTY },
 	{ "add", MR, FALSE, REG64, REG64, 0x01, EMPTY, EMPTY },
 	{ "add", RM, FALSE, REG64, REG64, 0x03, EMPTY, EMPTY },
+
+	/* INC — Increment by 1 */
 	{ "inc", M, FALSE, REG64, EMPTY, 0xFF, EMPTY, EMPTY },
+
+	/* SUB — Subtract */
+	{ "sub", MI, FALSE, REG64, IMM8, 0x83, EMPTY, 0x05 },
 	{ "sub", MI, FALSE, REG64, IMM32, 0x81, EMPTY, 0x05 },
 	{ "sub", MR, FALSE, REG64, REG32, 0x29, EMPTY, EMPTY },
 	{ "sub", RM, FALSE, REG64, REG32, 0x2B, EMPTY, EMPTY },
+
+	/* DEC — Decrement by 1 */
 	{ "dec", M, FALSE, REG64, EMPTY, 0xFF, EMPTY, 0x01 },
+
+	/* XOR — Logical Exclusive OR */
 	{ "xor", MR, FALSE, REG64, REG64, 0x31, EMPTY, EMPTY },
+
+	/* CMP — Compare Two Operands */
+	{ "cmp", MI, FALSE, REG64, IMM8, 0x83, EMPTY, 0x07 },
 	{ "cmp", MI, FALSE, REG64, IMM32, 0x81, EMPTY, 0x07 },
+
+	/* TEST — Logical Compare */
 	{ "test", MI, FALSE, REG64, IMM32, 0xF7, EMPTY, EMPTY },
+
+	/* Jcc — Jump if Condition Is Met */
 	{ "je", D, FALSE, IMM8, EMPTY, 0x74, EMPTY, EMPTY },
 	{ "jne", D, FALSE, IMM8, EMPTY, 0x75, EMPTY, EMPTY },
+
+	/* INT n/INTO/INT3/INT1 — Call to Interrupt Procedure */
 	{ "int", I, FALSE, IMM8, EMPTY, 0xCD, 0x00, EMPTY },
+
+	/* SYSCALL — Fast System Call */
 	{ "syscall", ZO, FALSE, EMPTY, EMPTY, 0x0F, 0x05, EMPTY },
+
+	/* CALL — Call Procedure */
 	{ "call", D, FALSE, IMM32, EMPTY, 0xE8, EMPTY, EMPTY },
+
+	/* RET — Return from Procedure */
 	{ "ret", ZO, FALSE, EMPTY, EMPTY, 0xC3, EMPTY, EMPTY },
 	{ "ret", I, FALSE, IMM16, EMPTY, 0xC2, EMPTY, EMPTY },
+
+	/* Pseudo-operations */
 	{ "db", EMPTY, FALSE, IMM8, EMPTY, EMPTY, EMPTY, EMPTY }
 };
 
@@ -245,7 +291,8 @@ void asm_make_instr(asm_t *as)
 			primary += asm_decode_reg(as, 0, 0);
 		
 		/* write REX prefix */
-		if (!op->rex_long && (op->op_1 & REG64 || op->op_2 & REG64 || (o1 && o1->extended) || (o2 && o2->extended)))
+		if (!op->rex_long && (op->op_1 & REG64 || op->op_2 & REG64 ||
+					(o1 && o1->extended) || (o2 && o2->extended)))
 		{
 			char rex = 0b01001000;
 		
@@ -275,10 +322,21 @@ void asm_make_instr(asm_t *as)
 			rm |= asm_decode_reg(as, 1, 0) << 3;
 	
 		if (!(o1 && o1->rel) && !(o2 && o2->rel))
-		{	
-			/* TODO: use 8-bit when possible */
-			if ((o1 && o1->disp != ~0) || (o2 && o2->disp != ~0))
-				rm |= 0b10 << 6;
+		{
+			if (o1 && o1->disp != ~0)
+			{
+				if (imm_size(o1->disp) & IMM8)
+					rm |= 0b01 << 6;
+				else
+					rm |= 0b10 << 6;
+			}
+			else if (o2 && o2->disp != ~0)
+			{
+				if (imm_size(o2->disp) & IMM8)
+					rm |= 0b01 << 6;
+				else
+					rm |= 0b10 << 6;
+			}
 			else
 				rm |= 0b11 << 6;
 		}
@@ -294,9 +352,19 @@ void asm_make_instr(asm_t *as)
 			exit(1);
 		}
 		else if (o1 && o1->disp != ~0)
-			asm_emit_imm(as, IMM32, o1->disp);
+		{
+			if (imm_size(o1->disp) & IMM8)
+				asm_emit_imm(as, IMM8, o1->disp);
+			else
+				asm_emit_imm(as, IMM32, o1->disp);
+		}
 		else if (o2 && o2->disp != ~0)
-			asm_emit_imm(as, IMM32, o2->disp);
+		{
+			if (imm_size(o2->disp) & IMM8)
+				asm_emit_imm(as, IMM8, o2->disp);
+			else
+				asm_emit_imm(as, IMM32, o2->disp);
+		}
 	}
 	
 	if (op->secondary)
@@ -544,10 +612,7 @@ op_t* asm_match_op(asm_t *as)
 
 	for (size_t i = 0; i < as->cur.op_count; i++)
 		for (size_t j = 0; j < as->cur.op[i].sub_count; j++)
-		{
-			asm_resolve_op(as, i, j);
-			ops[i] = match_op(as->cur.op[i].sub[j]);
-		}
+			ops[i] = asm_resolve_op(as, i, j);
 
 	for (size_t i = 0; i < sizeof(op) / sizeof(op_t); i++)
 	{
@@ -574,7 +639,8 @@ op_t* asm_match_op(asm_t *as)
 		{
 			/* types matching? */
 			if ((IS_REG(cur->op_1) && cur->op_1 != ops[0])
-				|| (IS_IMM(cur->op_1) != IS_IMM(ops[0])))
+				|| (IS_IMM(cur->op_1) != IS_IMM(ops[0]))
+				|| (IS_IMM(cur->op_1) && cur->op_1 < ops[0]))
 				continue;
 
 			/* r/x matching? */
@@ -586,7 +652,8 @@ op_t* asm_match_op(asm_t *as)
 		{
 			/* types matching? */
 			if ((IS_REG(cur->op_2) && cur->op_2 != ops[1])
-				|| IS_IMM(cur->op_2) != IS_IMM(ops[1]))
+				|| (IS_IMM(cur->op_2) != IS_IMM(ops[1]))
+				|| (IS_IMM(cur->op_2) && cur->op_2 < ops[1]))
 				continue;
 			
 			/* r/x matching? */
@@ -600,7 +667,7 @@ op_t* asm_match_op(asm_t *as)
 	return 0;
 }
 
-void asm_resolve_op(asm_t *as, size_t i, size_t j)
+size_t asm_resolve_op(asm_t *as, size_t i, size_t j)
 {
 	if (i >= as->cur.op_count)
 	{
@@ -660,11 +727,18 @@ void asm_resolve_op(asm_t *as, size_t i, size_t j)
 	dec->sub[j] = op;
 	
 	for (size_t i = 0; i < sizeof(reg) / sizeof(reg_t); i++)
-		if (reg[i].extended && !strcasecmp(reg[i].mnemonic, op))
+		if (!strcasecmp(reg[i].mnemonic, op))
 		{
-			dec->extended = 1;
-			return;
+			if (reg[i].extended)
+				dec->extended = 1;
+			return reg[i].size;
 		}
+	
+	/* skip over the hexadecimal prefix. */
+	char hex = op[0] == '0' && op[1] == 'x';
+	if (hex) op += 2;
+	long res = asm_decode_imm(as, i, j);
+	return imm_size(res);
 }
 
 char asm_decode_reg(asm_t *as, size_t i, size_t j)
@@ -841,26 +915,6 @@ section_t* asm_find_section(asm_t *as, const char *name)
 	return 0;
 }
 
-char match_op(char *op)
-{
-	for (size_t i = 0; i < sizeof(reg) / sizeof(reg_t); i++)
-		if (!strcasecmp(reg[i].mnemonic, op))
-			return reg[i].size;
-
-	/* skip over the hexadecimal prefix. */
-	char hex = op[0] == '0' && op[1] == 'x';
-	if (hex) op += 2;
-
-	for (size_t i = 0; i < strlen(op); i++)
-		if (!isdigit(op[i]) && !(hex && op[i] >= 'a' && op[i] <= 'f'))
-		{
-			printf("Operand `%s` could not be matched.\n", op);
-			exit(1);
-		}
-
-	return IMM8;
-}
-
 char op_size(size_t op)
 {
 	if (op & IMM64 || op & REG64)
@@ -871,6 +925,20 @@ char op_size(size_t op)
 		return 2;
 	else if (op & IMM8 || op & REG8)
 		return 1;
+
+	return 0;
+}
+
+size_t imm_size(long long op)
+{
+	if (op <= 0xFF)
+		return IMM8;
+	else if (op <= 0xFFFF)
+		return IMM16;
+	else if (op <= 0xFFFFFFFF)
+		return IMM32;
+	else if (op <= ~0ULL)
+		return IMM64;
 
 	return 0;
 }
