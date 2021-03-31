@@ -1,11 +1,13 @@
 
-section .text
+section .data
 
 str: db "%d\n"
 
+section .text
+
 extern printf
 
-main:
+main::
 
 push rbp
 mov rbp, rsp

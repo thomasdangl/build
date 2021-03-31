@@ -5,7 +5,7 @@ hello: db "Hello World!\n"
 
 section .text
 
-_start:
+_start::
 
 mov rax, 1
 mov rdi, 1

@@ -5,7 +5,7 @@ str: db "%d\n"
 
 extern printf
 
-main:
+main::
 
 push rbp
 mov rbp, rsp

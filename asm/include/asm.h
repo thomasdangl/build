@@ -8,6 +8,7 @@
 enum symbol_type
 {
 	LABEL,
+	GLOBAL_LABEL,
 	EXTERN
 };
 
@@ -30,6 +31,7 @@ typedef struct
 	char *name;
 	size_t section;
 	size_t addr;
+	size_t size;
 } symbol_t;
 
 typedef struct

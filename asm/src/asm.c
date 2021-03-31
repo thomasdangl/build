@@ -488,14 +488,22 @@ void asm_make_instr(asm_t *as)
 char asm_consume_label(asm_t *as)
 {
 	size_t len = strlen(as->token);
+	enum symbol_type t = LABEL;
 
-	if (as->token[len - 1] != ':')
+	if (len < 2 || as->token[len - 1] != ':')
 		return 0;
 
 	as->sym = realloc(as->sym, ++as->sym_count * sizeof(symbol_t));
 	symbol_t *sym = &as->sym[as->sym_count - 1];
-	sym->type = LABEL;
 	sym->name = calloc(len + 1, 1);
+	
+	if (len > 2 && as->token[len - 2] == ':')
+	{
+		len--;
+		t = GLOBAL_LABEL;
+	}
+
+	sym->type = t;
 	strcpy(sym->name, as->token);
 	sym->name[len - 1] = '\0';
 	sym->addr = as->out_count - as->section_start;
@@ -931,6 +939,9 @@ void asm_emit_current_labels(asm_t *as, char *line)
 	for (size_t i = as->last_sym_count; i < as->sym_count; i++)
 		switch(as->sym[i].type)
 		{
+		case GLOBAL_LABEL:
+			fprintf(str, "%s:: ", as->sym[i].name);
+			break;
 		case LABEL:
 			fprintf(str, "%s: ", as->sym[i].name);
 			break;

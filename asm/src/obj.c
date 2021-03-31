@@ -105,38 +105,51 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 	size += sym->sh_size;
 
 	Elf64_Sym *esy;
-	for (size_t i = 0; i < as->sym_count; i++)
-	{
-		sy = asm_iterate_symbols(as, i);
-		se = &as->sec[sy->section];
-		esy = (Elf64_Sym*) ((char*) elf + size - (as->sym_count - i) * sizeof(Elf64_Sym));
-		
-		esy->st_name = string_ind[i];
-		esy->st_value = sy->addr;
-		esy->st_size = 1;
-		esy->st_info = ELF64_ST_INFO(STB_GLOBAL, STT_FUNC);
-
-		switch (sy->type)
+	size_t *sy2esy = alloca(as->sym_count * sizeof(size_t));
+	size_t ind = 0;
+	for (char b = 0; b < 2; b++)
+		for (size_t i = 0; i < as->sym_count; i++)
 		{
-		case LABEL:
-			if (se == text_s)
-				esy->st_shndx = 2;
-			else if (se == data_s)
-				esy->st_shndx = 3;
-			else
+			sy = asm_iterate_symbols(as, i);
+			se = &as->sec[sy->section];
+			esy = (Elf64_Sym*) ((char*) elf + size - (as->sym_count - ind) * sizeof(Elf64_Sym));
+			
+			if (b == (sy->type == LABEL))
+				continue;
+			
+			esy->st_name = string_ind[i];
+			esy->st_value = sy->addr;
+			esy->st_size = 1;
+			esy->st_info = ELF64_ST_INFO(STB_GLOBAL, STT_FUNC);
+			sy2esy[i] = ind++;
+
+			switch (sy->type)
 			{
-				printf("Encountered label (%s:%s) outside of defined sections!\n",
-						se->name, sy->name);
-				exit(1);
+			case LABEL:
+				esy->st_info = ELF64_ST_INFO(STB_LOCAL, STT_FUNC);
+				sym->sh_info++;
+			case GLOBAL_LABEL:
+				if (se == text_s)
+					esy->st_shndx = 2;
+				else if (se == data_s)
+				{
+					esy->st_info = (esy->st_info & ~0xF) | ELF64_ST_TYPE(STT_OBJECT);
+					esy->st_shndx = 3;
+				}
+				else
+				{
+					printf("Encountered label (%s:%s) outside of defined sections!\n",
+							se->name, sy->name);
+					exit(1);
+				}
+				break;
+			case EXTERN:
+				esy->st_shndx = SHN_UNDEF;
+				break;
+			default:
+				break;
 			}
-			break;
-		case EXTERN:
-			esy->st_shndx = SHN_UNDEF;
-			break;
-		default:
-			break;
 		}
-	}
 	
 	Elf64_Shdr *rel = ELF_SECTION(elf, 5);
 	rel->sh_type = SHT_RELA;
@@ -158,15 +171,16 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 		re = asm_iterate_relocs(as, i);
 		erel = (Elf64_Rela*) ((char*) elf + size - (as->rel_count - i) * sizeof(Elf64_Rela));
 		erel->r_offset = re->addr;
+		size_t sy_ind = sy2esy[re->sym] + 1;
 
 		switch (re->type)
 		{
 		case ABSOLUTE:
-			erel->r_info = ELF64_R_INFO(re->sym + 1, R_X86_64_64);
+			erel->r_info = ELF64_R_INFO(sy_ind, R_X86_64_64);
 			erel->r_addend = 0;
 			break;
 		case RELATIVE:
-			erel->r_info = ELF64_R_INFO(re->sym + 1, R_X86_64_PC32);
+			erel->r_info = ELF64_R_INFO(sy_ind, R_X86_64_PC32);
 			erel->r_addend = -4;
 			break;
 		default:

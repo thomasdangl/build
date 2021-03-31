@@ -1,7 +1,7 @@
 
 section .text
 
-main:
+main::
 
 push rbp
 mov rsp, rbp

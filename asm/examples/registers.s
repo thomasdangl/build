@@ -15,7 +15,7 @@ call printf
 pop rbp
 ret
 
-main:
+main::
 
 push rbp
 mov rbp, rsp

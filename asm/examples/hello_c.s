@@ -7,7 +7,7 @@ section .text
 
 extern printf
 
-main:
+main::
 
 push rbp
 mov rbp, rsp
