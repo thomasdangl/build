@@ -37,7 +37,7 @@
 
 enum operand_encoding_type
 {
-	D,
+	D = 1,
 	I,
 	M,
 	O,
@@ -67,6 +67,7 @@ typedef struct
 	size_t val;
 	size_t size;
 	char extended;
+	char upper;
 } reg_t;
 
 char op_size(size_t op);

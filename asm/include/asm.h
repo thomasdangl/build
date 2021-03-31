@@ -37,7 +37,6 @@ typedef struct
 	enum reloc_type type;
 	size_t sym;
 	size_t addr;
-
 } reloc_t;
 
 typedef struct
@@ -47,6 +46,7 @@ typedef struct
 	int disp;
 	char rel;
 	char extended;
+	char legacy;
 	char **sub;
 	size_t sub_count;
 } dec_t;
@@ -93,7 +93,7 @@ void asm_close_section(asm_t *as);
 
 op_t* asm_match_op(asm_t *as);
 size_t asm_resolve_op(asm_t *as, size_t i, size_t j);
-char asm_decode_reg(asm_t *as, size_t i, size_t j);
+reg_t* asm_decode_reg(asm_t *as, size_t i, size_t j);
 long asm_decode_imm(asm_t *as, size_t i, size_t j);
 
 void asm_emit(asm_t *as, char byte);

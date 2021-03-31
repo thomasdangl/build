@@ -24,6 +24,7 @@ op_t op[] =
 	{ "lea", RM, FALSE, REG64, IMM32, 0x8D, EMPTY, EMPTY },
 
 	/* MOV - Move */
+	{ "mov", OI, FALSE, REG8, IMM8, 0xB0, EMPTY, EMPTY },
 	{ "mov", OI, FALSE, REG32, IMM32, 0xB8, EMPTY, EMPTY },
 	{ "mov", MI, FALSE, REG64, IMM32, 0xC7, EMPTY, EMPTY },
 	{ "mov", OI, FALSE, REG64, IMM64, 0xB8, EMPTY, EMPTY },
@@ -31,15 +32,20 @@ op_t op[] =
 	{ "mov", RM, FALSE, REG64, REG64, 0x8B, EMPTY, EMPTY },
 
 	/* PUSH — Push Word, Doubleword or Quadword Onto the Stack */
-	{ "push", O, TRUE, REG64, REG64, 0x50, EMPTY, EMPTY },
+	{ "push", O, TRUE, REG64, EMPTY, 0x50, EMPTY, EMPTY },
 	{ "push", I, FALSE, IMM32, EMPTY, 0x68, EMPTY, EMPTY },
 
 	/* POP — Pop a Value from the Stack */
-	{ "pop", O, TRUE, REG64, REG64, 0x58, EMPTY, EMPTY },
+	{ "pop", O, TRUE, REG64, EMPTY, 0x58, EMPTY, EMPTY },
 
 	/* ADD — Add */
+	{ "add", MI, FALSE, REG8, IMM8, 0x80, EMPTY, EMPTY },
+	{ "add", MI, FALSE, REG32, IMM8, 0x83, EMPTY, EMPTY },
 	{ "add", MI, FALSE, REG64, IMM8, 0x83, EMPTY, EMPTY },
 	{ "add", MI, FALSE, REG64, IMM32, 0x81, EMPTY, EMPTY },
+	{ "add", MR, FALSE, REG8, REG8, 0x00, EMPTY, EMPTY },
+	{ "add", MR, FALSE, REG16, REG16, 0x01, EMPTY, EMPTY },
+	{ "add", MR, FALSE, REG32, REG32, 0x01, EMPTY, EMPTY },
 	{ "add", MR, FALSE, REG64, REG64, 0x01, EMPTY, EMPTY },
 	{ "add", RM, FALSE, REG64, REG64, 0x03, EMPTY, EMPTY },
 
@@ -47,6 +53,7 @@ op_t op[] =
 	{ "inc", M, FALSE, REG64, EMPTY, 0xFF, EMPTY, EMPTY },
 
 	/* SUB — Subtract */
+	{ "sub", MI, FALSE, REG32, IMM8, 0x83, EMPTY, 0x05 },
 	{ "sub", MI, FALSE, REG64, IMM8, 0x83, EMPTY, 0x05 },
 	{ "sub", MI, FALSE, REG64, IMM32, 0x81, EMPTY, 0x05 },
 	{ "sub", MR, FALSE, REG64, REG32, 0x29, EMPTY, EMPTY },
@@ -56,7 +63,13 @@ op_t op[] =
 	{ "dec", M, FALSE, REG64, EMPTY, 0xFF, EMPTY, 0x01 },
 
 	/* XOR — Logical Exclusive OR */
+	{ "xor", MR, FALSE, REG8, REG8, 0x30, EMPTY, EMPTY },
+	{ "xor", MR, FALSE, REG32, REG32, 0x31, EMPTY, EMPTY },
 	{ "xor", MR, FALSE, REG64, REG64, 0x31, EMPTY, EMPTY },
+	{ "xor", MI, FALSE, REG8, IMM8, 0x80, EMPTY, 0x06 },
+	{ "xor", MI, FALSE, REG16, IMM16, 0x81, EMPTY, 0x06 },
+	{ "xor", MI, FALSE, REG32, IMM32, 0x81, EMPTY, 0x06 },
+	{ "xor", MI, FALSE, REG64, IMM32, 0x81, EMPTY, 0x06 },
 
 	/* CMP — Compare Two Operands */
 	{ "cmp", MI, FALSE, REG64, IMM8, 0x83, EMPTY, 0x07 },
@@ -88,54 +101,74 @@ op_t op[] =
 
 reg_t reg[] =
 {
-	{ "rax", RAX, REG64, FALSE },
-	{ "eax", RAX, REG32, FALSE },
-	{ "ax", RAX, REG16, FALSE },
-	{ "rcx", RCX, REG64, FALSE },
-	{ "ecx", RCX, REG32, FALSE },
-	{ "cx", RCX, REG16, FALSE },
-	{ "rdx", RDX, REG64, FALSE },
-	{ "edx", RDX, REG32, FALSE },
-	{ "cx", RDX, REG16, FALSE },
-	{ "rbx", RBX, REG64, FALSE },
-	{ "ebx", RBX, REG32, FALSE },
-	{ "bx", RBX, REG16, FALSE },
-	{ "rsp", RSP, REG64, FALSE },
-	{ "esp", RSP, REG32, FALSE },
-	{ "sp", RSP, REG16, FALSE },
-	{ "rbp", RBP, REG64, FALSE },
-	{ "ebp", RBP, REG32, FALSE },
-	{ "bp", RBP, REG16, FALSE },
-	{ "rsi", RSI, REG64, FALSE },
-	{ "esi", RSI, REG32, FALSE },
-	{ "si", RSI, REG16, FALSE },
-	{ "rdi", RDI, REG64, FALSE },
-	{ "edi", RDI, REG32, FALSE },
-	{ "di", RDI, REG16, FALSE },
-	{ "r8", R8, REG64, TRUE },
-	{ "r8d", R8, REG32, TRUE },
-	{ "r8w", R8, REG16, TRUE },
-	{ "r9", R9, REG64, TRUE },
-	{ "r9d", R9, REG32, TRUE },
-	{ "r9w", R9, REG16, TRUE },
-	{ "r10", R10, REG64, TRUE },
-	{ "r10d", R10, REG32, TRUE },
-	{ "r10w", R10, REG16, TRUE },
-	{ "r11", R11, REG64, TRUE },
-	{ "r11d", R11, REG32, TRUE },
-	{ "r11w", R11, REG16, TRUE },
-	{ "r12", R12, REG64, TRUE },
-	{ "r12d", R12, REG32, TRUE },
-	{ "r12w", R12, REG16, TRUE },
-	{ "r13", R13, REG64, TRUE },
-	{ "r13d", R13, REG32, TRUE },
-	{ "r13w", R13, REG16, TRUE },
-	{ "r14", R14, REG64, TRUE },
-	{ "r14d", R14, REG32, TRUE },
-	{ "r14w", R14, REG16, TRUE },
-	{ "r15", R15, REG64, TRUE },
-	{ "r15d", R15, REG32, TRUE },
-	{ "r15w", R15, REG16, TRUE }
+	{ "rax", RAX, REG64, FALSE, FALSE },
+	{ "eax", RAX, REG32, FALSE, FALSE },
+	{ "ax", RAX, REG16, FALSE, FALSE },
+	{ "al", RAX, REG8, FALSE, FALSE },
+	{ "ah", RAX, REG8, FALSE, TRUE },
+	{ "rcx", RCX, REG64, FALSE, FALSE },
+	{ "ecx", RCX, REG32, FALSE, FALSE },
+	{ "cx", RCX, REG16, FALSE, FALSE },
+	{ "cl", RCX, REG8, FALSE, FALSE },
+	{ "ch", RCX, REG8, FALSE, TRUE },
+	{ "rdx", RDX, REG64, FALSE, FALSE },
+	{ "edx", RDX, REG32, FALSE, FALSE },
+	{ "dx", RDX, REG16, FALSE, FALSE },
+	{ "dl", RDX, REG8, FALSE, FALSE },
+	{ "dh", RDX, REG8, FALSE, TRUE },
+	{ "rbx", RBX, REG64, FALSE, FALSE },
+	{ "ebx", RBX, REG32, FALSE, FALSE },
+	{ "bx", RBX, REG16, FALSE, FALSE },
+	{ "bl", RBX, REG8, FALSE, FALSE },
+	{ "bh", RBX, REG8, FALSE, TRUE },
+	{ "rsp", RSP, REG64, FALSE, FALSE },
+	{ "esp", RSP, REG32, FALSE, FALSE },
+	{ "sp", RSP, REG16, FALSE, FALSE },
+	{ "spl", RSP, REG8, FALSE, FALSE },
+	{ "rbp", RBP, REG64, FALSE, FALSE },
+	{ "ebp", RBP, REG32, FALSE, FALSE },
+	{ "bp", RBP, REG16, FALSE, FALSE },
+	{ "bpl", RBP, REG8, FALSE, FALSE },
+	{ "rsi", RSI, REG64, FALSE, FALSE },
+	{ "esi", RSI, REG32, FALSE, FALSE },
+	{ "si", RSI, REG16, FALSE, FALSE },
+	{ "sil", RSI, REG8, FALSE, FALSE },
+	{ "rdi", RDI, REG64, FALSE, FALSE },
+	{ "edi", RDI, REG32, FALSE, FALSE },
+	{ "di", RDI, REG16, FALSE, FALSE },
+	{ "dil", RDI, REG8, FALSE, FALSE },
+	{ "r8", R8, REG64, TRUE, FALSE },
+	{ "r8d", R8, REG32, TRUE, FALSE },
+	{ "r8w", R8, REG16, TRUE, FALSE },
+	{ "r8b", R8, REG8, TRUE, FALSE },
+	{ "r9", R9, REG64, TRUE, FALSE },
+	{ "r9d", R9, REG32, TRUE, FALSE },
+	{ "r9w", R9, REG16, TRUE, FALSE },
+	{ "r9b", R9, REG8, TRUE, FALSE },
+	{ "r10", R10, REG64, TRUE, FALSE },
+	{ "r10d", R10, REG32, TRUE, FALSE },
+	{ "r10w", R10, REG16, TRUE, FALSE },
+	{ "r10b", R10, REG8, TRUE, FALSE },
+	{ "r11", R11, REG64, TRUE, FALSE },
+	{ "r11d", R11, REG32, TRUE, FALSE },
+	{ "r11w", R11, REG16, TRUE, FALSE },
+	{ "r11b", R11, REG8, TRUE, FALSE },
+	{ "r12", R12, REG64, TRUE, FALSE },
+	{ "r12d", R12, REG32, TRUE, FALSE },
+	{ "r12w", R12, REG16, TRUE, FALSE },
+	{ "r12b", R12, REG8, TRUE, FALSE },
+	{ "r13", R13, REG64, TRUE, FALSE },
+	{ "r13d", R13, REG32, TRUE, FALSE },
+	{ "r13w", R13, REG16, TRUE, FALSE },
+	{ "r13b", R13, REG8, TRUE, FALSE },
+	{ "r14", R14, REG64, TRUE, FALSE },
+	{ "r14d", R14, REG32, TRUE, FALSE },
+	{ "r14w", R14, REG16, TRUE, FALSE },
+	{ "r14b", R14, REG8, TRUE, FALSE },
+	{ "r15", R15, REG64, TRUE, FALSE },
+	{ "r15d", R15, REG32, TRUE, FALSE },
+	{ "r15w", R15, REG16, TRUE, FALSE },
+	{ "r15b", R15, REG8, TRUE, FALSE }
 };
 
 asm_t* asm_init(lexer_t *lex)
@@ -233,6 +266,7 @@ void asm_advance(asm_t *as, char *new)
 			.disp = ~0,
 			.rel = 0,
 			.extended = 0,
+			.legacy = 0,
 			.sub = 0,
 			.sub_count = 0
 		};
@@ -252,12 +286,15 @@ void asm_make_instr(asm_t *as)
 			"Mnemonic: %s\nOP count: %d\n", as->cur.mnemonic,
 			as->cur.op_count);
 		for (size_t i = 0; i < as->cur.op_count; i++)
-			printf("OP %d: %s\n", i, as->cur.op[i]);
+			printf("OP %d: %s\n", i, as->cur.op[i].op);
 		exit(1);
 	}
 
+	symbol_t *sym;
+	enum operand_encoding_type e = op->op;
+	
 	/* handle pseudo-instructions first */
-	if (op->primary == EMPTY)
+	if (e == EMPTY)
 	{
 		for (size_t i = 0; i < as->cur.op_count; i++)
 			for (size_t j = 0; j < as->cur.op[i].sub_count; j++)
@@ -266,8 +303,16 @@ void asm_make_instr(asm_t *as)
 		return;
 	}
 
-	symbol_t *sym;
-	enum operand_encoding_type e = op->op;
+	/* write legacy prefixes */
+	size_t op_1 = op->op_1, op_2 = op->op_2;
+	if (as->cur.op_count > 0 && as->cur.op[0].legacy)
+	{
+		asm_emit(as, as->cur.op[0].legacy);
+		if (op_size(op->op_1) >= 4)
+			op->op_1 >>= 1;
+		if (op_size(op->op_2) >= 4)
+			op->op_2 >>= 1;
+	}
 	
 	/* swap RM to MR, makes the code following a lot easier */
 	if (e == RM)
@@ -283,18 +328,27 @@ void asm_make_instr(asm_t *as)
 
 	dec_t *o1 = as->cur.op_count > 0 ? &as->cur.op[0] : 0;
 	dec_t *o2 = as->cur.op_count > 1 ? &as->cur.op[1] : 0;
+	reg_t *r1 = IS_REG(op->op_1) ? asm_decode_reg(as, 0, 0) : 0;
+	reg_t *r2 = IS_REG(op->op_2) ? asm_decode_reg(as, 1, 0) : 0;
+	char reg1 = r1 ? r1->val | (r1->upper << 2) : 0;
+	char reg2 = r2 ? r2->val | (r2->upper << 2) : 0;
 	char primary = op->primary;
 
 	if (IS_REG(op->op_1) || IS_REG(op->op_2))
 	{
 		if (e == O || e == OI)
-			primary += asm_decode_reg(as, 0, 0);
+			primary += reg1;
 		
 		/* write REX prefix */
 		if (!op->rex_long && (op->op_1 & REG64 || op->op_2 & REG64 ||
-					(o1 && o1->extended) || (o2 && o2->extended)))
+					(o1 && o1->extended) || (o2 && o2->extended) ||
+					(op->op_1 & REG8 && r1->val & 0b100) ||
+					(op->op_2 & REG8 && r2->val & 0b100)))
 		{
-			char rex = 0b01001000;
+			char rex = 0b01000000;
+
+			if (op->op_1 & REG64 || op->op_2 & REG64)
+				rex |= 0b1 << 3;
 		
 			/*
 			 * the intel documentation is wrong, these two bits are required
@@ -316,10 +370,10 @@ void asm_make_instr(asm_t *as)
 		char rm = 0b00000000;
 		
 		if (IS_REG(op->op_1))
-			rm |= asm_decode_reg(as, 0, 0);
+			rm |= reg1;
 		
 		if (IS_REG(op->op_2))
-			rm |= asm_decode_reg(as, 1, 0) << 3;
+			rm |= reg2 << 3;
 	
 		if (!(o1 && o1->rel) && !(o2 && o2->rel))
 		{
@@ -425,7 +479,9 @@ void asm_make_instr(asm_t *as)
 		op->op_2 = tmp2;
 		e = MR;
 	}
-
+	
+	op->op_1 = op_1;
+	op->op_2 = op_2;
 	memset(&as->cur, 0, sizeof(instr_t));
 }
 
@@ -614,6 +670,8 @@ op_t* asm_match_op(asm_t *as)
 		for (size_t j = 0; j < as->cur.op[i].sub_count; j++)
 			ops[i] = asm_resolve_op(as, i, j);
 
+	char override_operand = 0;
+scan_again:
 	for (size_t i = 0; i < sizeof(op) / sizeof(op_t); i++)
 	{
 		cur = &op[i];
@@ -664,6 +722,35 @@ op_t* asm_match_op(asm_t *as)
 		return cur;
 	}
 
+	if (override_operand)
+	{
+		/* 
+		 * TODO: if we actually implement address-prefixes at some point,
+		 * we have to restore the old op sizes here.
+		 */
+		as->cur.op[0].legacy = 0;
+	}
+	else if (sub_count > 0)
+	{
+		if (op_size(ops[0]) <= 2)
+		{
+			ops[0] <<= 1;
+			override_operand = 1;
+		}
+
+		if (sub_count > 1 && op_size(ops[0]) <= 2)
+		{
+			ops[1] <<= 1;
+			override_operand = 1;
+		}
+		
+		if (override_operand)
+		{
+			as->cur.op[0].legacy = 0x66;
+			goto scan_again;
+		}
+	}
+	
 	return 0;
 }
 
@@ -741,7 +828,7 @@ size_t asm_resolve_op(asm_t *as, size_t i, size_t j)
 	return imm_size(res);
 }
 
-char asm_decode_reg(asm_t *as, size_t i, size_t j)
+reg_t* asm_decode_reg(asm_t *as, size_t i, size_t j)
 {
 	if (i >= as->cur.op_count)
 	{
@@ -759,11 +846,11 @@ char asm_decode_reg(asm_t *as, size_t i, size_t j)
 
 	for (size_t t = 0; t < sizeof(reg) / sizeof(reg_t); t++)
 		if (!strcasecmp(reg[t].mnemonic, dec->sub[j]))
-			return reg[t].val;
+			return &reg[t];
 
 	printf("Unknown register `%s` to decode.", dec->sub[j]);
 	exit(1);
-	return 0xFF;
+	return 0;
 }
 
 long asm_decode_imm(asm_t *as, size_t i, size_t j)
