@@ -1,4 +1,4 @@
-TARGET ?= asm
+TARGET ?= comp
 SRC_DIRS ?= ./src
 INC_DIRS := ./include
 
