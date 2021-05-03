@@ -31,9 +31,13 @@ codegen_t* codegen_init(node_t *ast);
 void codegen_run(codegen_t *cg);
 
 void codegen_eval_node(codegen_t *cg, node_t *node);
-void codegen_nop(codegen_t *cg, node_t *node);
+void codegen_scope(codegen_t *cg, node_t *node);
 void codegen_call(codegen_t *cg, node_t *node);
 void codegen_constant(codegen_t *cg, node_t *node);
+void codegen_assign(codegen_t *cg, node_t *node);
+
+void codegen_add(codegen_t *cg, node_t *node);
+void codegen_sub(codegen_t *cg, node_t *node);
 
 void codegen_emit(codegen_t *cg, const char *format, ...);
 void codegen_pretty_print(codegen_t *cg);

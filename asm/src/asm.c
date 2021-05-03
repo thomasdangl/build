@@ -407,6 +407,10 @@ void asm_make_instr(asm_t *as)
 		}
 		else if (o1 && o1->disp != ~0)
 		{
+			/* TODO: add dynamic encoding of SIB byte. */
+			if (r1 && r1->val == RSP /* || R12 */)
+				asm_emit(as, 0b00100100);
+
 			if (imm_size(o1->disp) & IMM8)
 				asm_emit_imm(as, IMM8, o1->disp);
 			else

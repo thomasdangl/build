@@ -15,6 +15,8 @@ int main(int argc, char** argv)
 
 	parser_t *par = parser_init(argv[1]);
 	node_t *ast = parser_full_pass(par);
+	ast_print(ast, 0);
+	puts("");
 	codegen_t *cg = codegen_init(ast);
 	codegen_pretty_print(cg);
 

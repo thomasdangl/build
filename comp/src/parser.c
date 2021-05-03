@@ -37,6 +37,7 @@ static char accept(parser_t *par, token_t tok)
 		parser_tokenize(par);
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -56,7 +57,7 @@ static char accept2(parser_t *par, token_t tok, token_t lah)
 
 node_t* parser_full_pass(parser_t *par)
 {
-	par->ast = ast_init_node(nop, 0);
+	par->ast = ast_init_node(scope, 0);
 
 	/* tokenize until we have arrived at the first token. */
 	parser_tokenize(par);
@@ -85,6 +86,9 @@ start:
 	case '(':  par->lah.t = oparen; return;
 	case ')':  par->lah.t = cparen; return;
 	case ';':  par->lah.t = semic; return;
+	case '=':  par->lah.t = equals; return;
+	case '+':  par->lah.t = plus; return;
+	case '-':  par->lah.t = minus; return;
 	}
 
 	char *start = par->cur, i = 0, alpha = isalpha(*par->cur) || *par->cur == '_';
@@ -123,34 +127,89 @@ start:
 
 void parser_program(parser_t *par)
 {
+	parser_scope(par, par->ast);
+}
+
+void parser_expression(parser_t *par, node_t *node)
+{
+	if (accept(par, litint) || accept(par, ident))
+	{
+		switch (par->acc.t)
+		{
+		case litint:
+			ast_init_node(constant, node)->constant.val
+				= par->acc.val;
+			break;
+		case ident:
+			ast_init_node(variable, node)->variable.sym =
+				ast_symbolize(par->scope, par->acc.id);
+			break;
+		}
+		return;
+	}
+
+	if (accept(par, plus) || accept(par, minus))
+	{
+		node_t *new;
+
+		switch (par->acc.t)
+		{
+		case plus:
+			new = ast_init_node(add, node);
+			break;
+		case minus:
+			new = ast_init_node(sub, node);
+			break;
+		}
+
+		parser_expression(par, new);
+		parser_expression(par, new);
+		return;
+	}
+
+	printf("Failed to parse expression.\n");
+	exit(1);
+}
+
+void parser_scope(parser_t *par, node_t *node)
+{
+	par->scope = node;
+
+	if (accept2(par, ident, equals))
+	{
+		node_t *new = ast_init_node(assign, node);
+		
+		if (accept(par, equals))
+		{
+			/* TODO: */
+		}
+
+		ast_init_node(variable, new)->variable.sym =
+			ast_symbolize(par->scope, par->acc.id);
+		parser_expression(par, new);
+
+		if (!accept(par, semic))
+		{
+			printf("Missing semicolon.\n");
+			exit(1);
+		}
+	}
+
 	if (accept2(par, ident, oparen))
 	{
+		/* TODO: this should hook up into the symbol table at some point */
 		const char *fn = par->acc.id;
-
-		/* TODO: where should this plug into? */
-		node_t *node = ast_init_node(call, par->ast);
-
-		/* TODO: accept any expression here */
-		while (accept(par, litint))
-		{
-			ast_init_node(constant, node)->constant.val = par->acc.val;
-		}
+		node_t *new = ast_init_node(call, node);
+		parser_expression(par, new);
 
 		/* function invokation */
 		if (accept2(par, cparen, semic))
 		{
-			node->call.name = fn;
+			new->call.name = fn;
 			return;	
 		}
 	}
 	
-	printf("Failed to parse program.\n");
-	exit(1);
-}
-
-void parser_scope(parser_t *par)
-{
-
 	printf("Failed to parse scope.\n");
 	exit(1);
 }
