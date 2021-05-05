@@ -53,11 +53,15 @@ op_t op[] =
 	{ "inc", M, FALSE, REG64, EMPTY, 0xFF, EMPTY, EMPTY },
 
 	/* SUB — Subtract */
+	{ "sub", MI, FALSE, REG8, IMM8, 0x80, EMPTY, 0x05 },
 	{ "sub", MI, FALSE, REG32, IMM8, 0x83, EMPTY, 0x05 },
 	{ "sub", MI, FALSE, REG64, IMM8, 0x83, EMPTY, 0x05 },
 	{ "sub", MI, FALSE, REG64, IMM32, 0x81, EMPTY, 0x05 },
-	{ "sub", MR, FALSE, REG64, REG32, 0x29, EMPTY, EMPTY },
-	{ "sub", RM, FALSE, REG64, REG32, 0x2B, EMPTY, EMPTY },
+	{ "sub", MR, FALSE, REG8, REG8, 0x28, EMPTY, EMPTY },
+	{ "sub", MR, FALSE, REG16, REG16, 0x29, EMPTY, EMPTY },
+	{ "sub", MR, FALSE, REG32, REG32, 0x29, EMPTY, EMPTY },
+	{ "sub", MR, FALSE, REG64, REG64, 0x29, EMPTY, EMPTY },
+	{ "sub", RM, FALSE, REG64, REG64, 0x2B, EMPTY, EMPTY },
 
 	/* DEC — Decrement by 1 */
 	{ "dec", M, FALSE, REG64, EMPTY, 0xFF, EMPTY, 0x01 },

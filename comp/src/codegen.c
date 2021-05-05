@@ -80,10 +80,10 @@ void codegen_call(codegen_t *cg, node_t *node)
 						sizeof(long long) * node->children[i]->variable.sym);
 				break;
 			default:
-				printf("Passing arguments that are not "
-					"variables or constants is not "
-					"implemented!\n");
-				exit(1);
+				/* warning! cannot clutter systemv regs! */
+				codegen_eval_node(cg, node->children[i]);
+				codegen_emit(cg, "MOV %s, RAX", systemv_regs[i]);
+				break;
 			}
 		}
 		else
@@ -98,7 +98,13 @@ void codegen_call(codegen_t *cg, node_t *node)
 
 void codegen_constant(codegen_t *cg, node_t *node)
 {
-	/* TODO: ??? */
+	if (node->children_count != 0)
+	{
+		printf("Ill-formated constant.\n");
+		exit(1);
+	}
+
+	codegen_emit(cg, "MOV RAX, %d", node->constant.val);
 }
 
 void codegen_assign(codegen_t *cg, node_t *node)
@@ -116,35 +122,82 @@ void codegen_assign(codegen_t *cg, node_t *node)
 
 void codegen_add(codegen_t *cg, node_t *node)
 {
-	/* TODO: */
+	if (node->children_count != 2)
+	{
+		printf("Ill-formated add.\n");
+		exit(1);
+	}
+
+	for (char i = 0; i < 2; i++)
+		switch (node->children[i]->type)
+		{
+		case constant:
+			codegen_emit(cg, i == 0 ? "MOV RAX, %d" : "ADD RAX, %d",
+					node->children[i]->constant.val);
+			break;
+		case variable:
+			codegen_emit(cg, i == 0 ? "MOV RAX, [RSP-%d]" :
+					"ADD RAX, [RSP-%d]", sizeof(long long)
+					* node->children[i]->variable.sym);
+			break;
+		case add:
+		case sub:
+			if (i == 1)
+			{
+				codegen_emit(cg, "PUSH RAX");
+				codegen_eval_node(cg, node->children[i]);
+				codegen_emit(cg, "MOV RBX, RAX");
+				codegen_emit(cg, "POP RAX");
+				codegen_emit(cg, "ADD RAX, RBX");
+			}
+			else
+				codegen_eval_node(cg, node->children[i]);
+			break;
+		default:
+			printf("Unhandled node type `%d` in add.\n",
+					node->children[i]->type);
+			exit(1);
+		}
 }
 
 void codegen_sub(codegen_t *cg, node_t *node)
 {
-	if (node->children_count != 2 && node->children[0]->type != constant)
+	if (node->children_count != 2)
 	{
 		printf("Ill-formated sub.\n");
 		exit(1);
 	}
 
-	codegen_emit(cg, "MOV RAX, %d", node->children[0]->constant.val);
-	
-	switch (node->children[1]->type)
-	{
-	case constant:
-		codegen_emit(cg, "SUB RAX, %d",
-				node->children[1]->constant.val);
-		break;
-	case variable:
-		codegen_emit(cg, "SUB RAX, [RSP-%d]", sizeof(long long)
-				* node->children[1]->variable.sym);
-		break;
-	default:
-		/* TODO: nested expressions */
-		printf("Unhandled node type `%d` in sub.\n",
-				node->children[1]->type);
-		exit(1);
-	}
+	for (char i = 0; i < 2; i++)
+		switch (node->children[i]->type)
+		{
+		case constant:
+			codegen_emit(cg, i == 0 ? "MOV RAX, %d" : "SUB RAX, %d",
+					node->children[i]->constant.val);
+			break;
+		case variable:
+			codegen_emit(cg, i == 0 ? "MOV RAX, [RSP-%d]" :
+					"SUB RAX, [RSP-%d]", sizeof(long long)
+					* node->children[i]->variable.sym);
+			break;
+		case add:
+		case sub:
+			if (i == 1)
+			{
+				codegen_emit(cg, "PUSH RAX");
+				codegen_eval_node(cg, node->children[i]);
+				codegen_emit(cg, "MOV RBX, RAX");
+				codegen_emit(cg, "POP RAX");
+				codegen_emit(cg, "SUB RAX, RBX");
+			}
+			else
+				codegen_eval_node(cg, node->children[i]);
+			break;
+		default:
+			printf("Unhandled node type `%d` in sub.\n",
+					node->children[i]->type);
+			exit(1);
+		}
 }
 
 void codegen_emit(codegen_t *cg, const char *format, ...)

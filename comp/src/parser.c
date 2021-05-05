@@ -127,54 +127,15 @@ start:
 
 void parser_program(parser_t *par)
 {
-	parser_scope(par, par->ast);
+	if (parser_scope(par, par->ast))
+	{
+		printf("Failed to parse scope.\n");
+		exit(1);
+	}
 }
 
-void parser_expression(parser_t *par, node_t *node)
+char parser_expression(parser_t *par, node_t *node)
 {
-	if (accept(par, litint) || accept(par, ident))
-	{
-		switch (par->acc.t)
-		{
-		case litint:
-			ast_init_node(constant, node)->constant.val
-				= par->acc.val;
-			break;
-		case ident:
-			ast_init_node(variable, node)->variable.sym =
-				ast_symbolize(par->scope, par->acc.id);
-			break;
-		}
-		return;
-	}
-
-	if (accept(par, plus) || accept(par, minus))
-	{
-		node_t *new;
-
-		switch (par->acc.t)
-		{
-		case plus:
-			new = ast_init_node(add, node);
-			break;
-		case minus:
-			new = ast_init_node(sub, node);
-			break;
-		}
-
-		parser_expression(par, new);
-		parser_expression(par, new);
-		return;
-	}
-
-	printf("Failed to parse expression.\n");
-	exit(1);
-}
-
-void parser_scope(parser_t *par, node_t *node)
-{
-	par->scope = node;
-
 	if (accept2(par, ident, equals))
 	{
 		node_t *new = ast_init_node(assign, node);
@@ -193,8 +154,10 @@ void parser_scope(parser_t *par, node_t *node)
 			printf("Missing semicolon.\n");
 			exit(1);
 		}
-	}
 
+		return 0;
+	}
+	
 	if (accept2(par, ident, oparen))
 	{
 		/* TODO: this should hook up into the symbol table at some point */
@@ -206,11 +169,56 @@ void parser_scope(parser_t *par, node_t *node)
 		if (accept2(par, cparen, semic))
 		{
 			new->call.name = fn;
-			return;	
+			return 0;
 		}
+
+		return 1;
 	}
-	
-	printf("Failed to parse scope.\n");
-	exit(1);
+
+	if (accept(par, litint) || accept(par, ident))
+	{
+		switch (par->acc.t)
+		{
+		case litint:
+			ast_init_node(constant, node)->constant.val
+				= par->acc.val;
+			break;
+		case ident:
+			ast_init_node(variable, node)->variable.sym =
+				ast_symbolize(par->scope, par->acc.id);
+			break;
+		}
+		return 0;
+	}
+
+	if (accept(par, plus) || accept(par, minus))
+	{
+		node_t *new;
+
+		switch (par->acc.t)
+		{
+		case plus:
+			new = ast_init_node(add, node);
+			break;
+		case minus:
+			new = ast_init_node(sub, node);
+			break;
+		}
+
+		parser_expression(par, new);
+		parser_expression(par, new);
+		return 0;
+	}
+
+	return 1;
+}
+
+char parser_scope(parser_t *par, node_t *node)
+{
+	par->scope = node;
+
+	while (!parser_expression(par, node)) { }
+
+	return 0;
 }
 

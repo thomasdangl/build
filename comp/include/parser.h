@@ -29,8 +29,8 @@ node_t* parser_full_pass(parser_t *par);
 void parser_tokenize(parser_t *par);
 
 void parser_program(parser_t *par);
-void parser_expression(parser_t *par, node_t *node);
-void parser_scope(parser_t *par, node_t *node);
+char parser_expression(parser_t *par, node_t *node);
+char parser_scope(parser_t *par, node_t *node);
 
 #endif /* COMP_PARSER_H */
 
