@@ -3,12 +3,14 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/param.h>
 
 static const char* systemv_regs[] = { RDI, RSI, RDX, RCX, R8, R9 };
+static const char* ar_regs[] = { RAX, RBX, R10, R11, R12, R13, R14, R15 };
 
 static size_t align_by(long long addr, char al)
 {
-	return (addr + (al - 1)) & al;
+	return (addr + (al - 1)) & -al;
 }
 
 codegen_t* codegen_init(node_t *ast)
@@ -22,7 +24,19 @@ codegen_t* codegen_init(node_t *ast)
 
 void codegen_run(codegen_t *cg)
 {
-	codegen_emit(cg, "section .text\n\nextern exit\n\nmain::");
+	codegen_emit(cg, "section .text\n");
+
+	symbol_t *sym;
+	for (size_t i = 0; i < cg->ast->scope.sym_count; i++)
+	{
+		sym = &cg->ast->scope.sym[i];
+		if (sym->ext == 1)
+			codegen_emit(cg, "extern %s", sym->name);
+	}
+	if (cg->ast->scope.sym_count > 0)
+		codegen_emit(cg, "");
+
+	codegen_emit(cg, "main::");
 	cg->indent++;
 	codegen_eval_node(cg, cg->ast);
 	cg->indent--;
@@ -35,6 +49,7 @@ void codegen_eval_node(codegen_t *cg, node_t *node)
 	case scope: codegen_scope(cg, node); break;
 	case call: codegen_call(cg, node); break;
 	case constant: codegen_constant(cg, node); break;
+	case variable: codegen_variable(cg, node); break;
 	case assign: codegen_assign(cg, node); break;
 	case add: codegen_add(cg, node); break;
 	case sub: codegen_sub(cg, node); break;
@@ -65,7 +80,6 @@ void codegen_scope(codegen_t *cg, node_t *node)
 
 void codegen_call(codegen_t *cg, node_t *node)
 {
-	/* TODO: these need to be evaluted first */
 	for (size_t i = 0; i < node->children_count; i++)
 		if (i < sizeof(systemv_regs) / sizeof(char*))
 		{
@@ -80,7 +94,7 @@ void codegen_call(codegen_t *cg, node_t *node)
 						sizeof(long long) * node->children[i]->variable.sym);
 				break;
 			default:
-				/* warning! cannot clutter systemv regs! */
+				/* warning! cannot clobber systemv regs! */
 				codegen_eval_node(cg, node->children[i]);
 				codegen_emit(cg, "MOV %s, RAX", systemv_regs[i]);
 				break;
@@ -92,8 +106,8 @@ void codegen_call(codegen_t *cg, node_t *node)
 			exit(1);
 		}
 
-	/* TODO: this needs to be hooked up to the symbol table! */
-	codegen_emit(cg, "CALL %s", node->call.name);
+	symbol_t *sym = &cg->ast->scope.sym[node->call.sym];
+	codegen_emit(cg, "CALL %s", sym->name);
 }
 
 void codegen_constant(codegen_t *cg, node_t *node)
@@ -104,7 +118,22 @@ void codegen_constant(codegen_t *cg, node_t *node)
 		exit(1);
 	}
 
-	codegen_emit(cg, "MOV RAX, %d", node->constant.val);
+	codegen_emit(cg, "MOV %s, %d",
+			ar_regs[cg->ar_base],
+			node->constant.val);
+}
+
+void codegen_variable(codegen_t *cg, node_t *node)
+{
+	if (node->children_count != 0)
+	{
+		printf("Ill-formated variable.\n");
+		exit(1);
+	}
+
+	codegen_emit(cg, "MOV %s, [RSP-%d]",
+			ar_regs[cg->ar_base],
+			sizeof(long long) * node->variable.sym);
 }
 
 void codegen_assign(codegen_t *cg, node_t *node)
@@ -115,9 +144,57 @@ void codegen_assign(codegen_t *cg, node_t *node)
 		exit(1);
 	}
 
+	if (node->children[1]->type == constant)
+	{
+		codegen_emit(cg, "MOV [RSP-%d], %d", sizeof(long long)
+				* node->children[0]->variable.sym,
+				node->children[1]->constant.val);
+		return;
+	}
+
 	codegen_eval_node(cg, node->children[1]);
 	codegen_emit(cg, "MOV [RSP-%d], RAX", sizeof(long long)
 			* node->children[0]->variable.sym);
+}
+
+/*
+ * For arithmetic expressions, see the algorithm
+ * in the dragon book (2nd edition) page 569.
+ */
+static size_t step(node_t *node)
+{
+	if (node->type == variable || node->type == constant)
+		return 1;
+	return MAX(step(node->children[0]),
+		step(node->children[1])) + 1;
+}
+
+static void codegen_ar_expr(codegen_t *cg, node_t *node)
+{
+	size_t left = step(node->children[0]);
+	size_t right = step(node->children[1]);
+
+	if (left == right)
+	{
+		cg->ar_base++;
+		codegen_eval_node(cg, node->children[1]);
+		cg->ar_base--;
+		codegen_eval_node(cg, node->children[0]);
+	}
+	else if (left > right)
+	{
+		cg->ar_base++;
+		codegen_eval_node(cg, node->children[0]);
+		cg->ar_base--;
+		codegen_eval_node(cg, node->children[1]);
+	}
+	else if (right > left)
+	{
+		cg->ar_base++;
+		codegen_eval_node(cg, node->children[1]);
+		cg->ar_base--;
+		codegen_eval_node(cg, node->children[0]);
+	}
 }
 
 void codegen_add(codegen_t *cg, node_t *node)
@@ -128,36 +205,10 @@ void codegen_add(codegen_t *cg, node_t *node)
 		exit(1);
 	}
 
-	for (char i = 0; i < 2; i++)
-		switch (node->children[i]->type)
-		{
-		case constant:
-			codegen_emit(cg, i == 0 ? "MOV RAX, %d" : "ADD RAX, %d",
-					node->children[i]->constant.val);
-			break;
-		case variable:
-			codegen_emit(cg, i == 0 ? "MOV RAX, [RSP-%d]" :
-					"ADD RAX, [RSP-%d]", sizeof(long long)
-					* node->children[i]->variable.sym);
-			break;
-		case add:
-		case sub:
-			if (i == 1)
-			{
-				codegen_emit(cg, "PUSH RAX");
-				codegen_eval_node(cg, node->children[i]);
-				codegen_emit(cg, "MOV RBX, RAX");
-				codegen_emit(cg, "POP RAX");
-				codegen_emit(cg, "ADD RAX, RBX");
-			}
-			else
-				codegen_eval_node(cg, node->children[i]);
-			break;
-		default:
-			printf("Unhandled node type `%d` in add.\n",
-					node->children[i]->type);
-			exit(1);
-		}
+	codegen_ar_expr(cg, node);
+	codegen_emit(cg, "ADD %s, %s",
+		ar_regs[cg->ar_base],
+		ar_regs[cg->ar_base + 1]);
 }
 
 void codegen_sub(codegen_t *cg, node_t *node)
@@ -168,36 +219,10 @@ void codegen_sub(codegen_t *cg, node_t *node)
 		exit(1);
 	}
 
-	for (char i = 0; i < 2; i++)
-		switch (node->children[i]->type)
-		{
-		case constant:
-			codegen_emit(cg, i == 0 ? "MOV RAX, %d" : "SUB RAX, %d",
-					node->children[i]->constant.val);
-			break;
-		case variable:
-			codegen_emit(cg, i == 0 ? "MOV RAX, [RSP-%d]" :
-					"SUB RAX, [RSP-%d]", sizeof(long long)
-					* node->children[i]->variable.sym);
-			break;
-		case add:
-		case sub:
-			if (i == 1)
-			{
-				codegen_emit(cg, "PUSH RAX");
-				codegen_eval_node(cg, node->children[i]);
-				codegen_emit(cg, "MOV RBX, RAX");
-				codegen_emit(cg, "POP RAX");
-				codegen_emit(cg, "SUB RAX, RBX");
-			}
-			else
-				codegen_eval_node(cg, node->children[i]);
-			break;
-		default:
-			printf("Unhandled node type `%d` in sub.\n",
-					node->children[i]->type);
-			exit(1);
-		}
+	codegen_ar_expr(cg, node);
+	codegen_emit(cg, "SUB %s, %s",
+		ar_regs[cg->ar_base],
+		ar_regs[cg->ar_base + 1]);
 }
 
 void codegen_emit(codegen_t *cg, const char *format, ...)

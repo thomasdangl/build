@@ -24,7 +24,7 @@
 typedef struct
 {
 	node_t *ast;
-	char *scratch, *cur, indent;
+	char *scratch, *cur, indent, ar_base;
 } codegen_t;
 
 codegen_t* codegen_init(node_t *ast);
@@ -34,6 +34,7 @@ void codegen_eval_node(codegen_t *cg, node_t *node);
 void codegen_scope(codegen_t *cg, node_t *node);
 void codegen_call(codegen_t *cg, node_t *node);
 void codegen_constant(codegen_t *cg, node_t *node);
+void codegen_variable(codegen_t *cg, node_t *node);
 void codegen_assign(codegen_t *cg, node_t *node);
 
 void codegen_add(codegen_t *cg, node_t *node);

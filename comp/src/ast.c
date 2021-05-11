@@ -21,11 +21,14 @@ void ast_node_insert(node_t *parent, node_t *child)
 	parent->children[parent->children_count - 1] = child;
 }
 
-size_t ast_symbolize(node_t *node, const char *name)
+size_t ast_symbolize(node_t *node, const char *name, char insert)
 {
 	for (size_t i = 0; i < node->scope.sym_count; i++)
 		if (strcmp(node->scope.sym[i].name, name) == 0)
 			return i;
+
+	if (!insert)
+		return -1;
 
 	node->scope.sym = realloc(node->scope.sym,
 			++node->scope.sym_count * sizeof(symbol_t));

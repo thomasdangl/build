@@ -89,6 +89,24 @@ start:
 	case '=':  par->lah.t = equals; return;
 	case '+':  par->lah.t = plus; return;
 	case '-':  par->lah.t = minus; return;
+	case '/': 
+		if (*(par->cur + 1) == '*')
+		{
+			while (*par->cur != '\0' &&
+				(*par->cur != '*' || *(par->cur + 1) != '/'))
+				par->cur++;
+			par->cur++;
+		}
+		else if (*(par->cur + 1) == '/')
+			while (*par->cur != '\0' && *par->cur != '\n')
+				par->cur++;
+		else
+		{
+			printf("Failed to parse comment!\n");
+			exit(1);
+		}
+		
+		goto start;
 	}
 
 	char *start = par->cur, i = 0, alpha = isalpha(*par->cur) || *par->cur == '_';
@@ -146,7 +164,7 @@ char parser_expression(parser_t *par, node_t *node)
 		}
 
 		ast_init_node(variable, new)->variable.sym =
-			ast_symbolize(par->scope, par->acc.id);
+			ast_symbolize(par->scope, par->acc.id, 1);
 		parser_expression(par, new);
 
 		if (!accept(par, semic))
@@ -160,15 +178,15 @@ char parser_expression(parser_t *par, node_t *node)
 	
 	if (accept2(par, ident, oparen))
 	{
-		/* TODO: this should hook up into the symbol table at some point */
-		const char *fn = par->acc.id;
+		size_t ind = ast_symbolize(par->scope, par->acc.id, 1);
 		node_t *new = ast_init_node(call, node);
 		parser_expression(par, new);
 
 		/* function invokation */
 		if (accept2(par, cparen, semic))
 		{
-			new->call.name = fn;
+			new->call.sym = ind;
+			par->scope->scope.sym[ind].ext = 1;
 			return 0;
 		}
 
@@ -185,7 +203,7 @@ char parser_expression(parser_t *par, node_t *node)
 			break;
 		case ident:
 			ast_init_node(variable, node)->variable.sym =
-				ast_symbolize(par->scope, par->acc.id);
+				ast_symbolize(par->scope, par->acc.id, 0);
 			break;
 		}
 		return 0;

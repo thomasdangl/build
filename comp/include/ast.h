@@ -12,6 +12,7 @@ typedef enum
 typedef struct
 {
 	const char *name;
+	char ext;
 } symbol_t;
 
 typedef struct node
@@ -26,12 +27,12 @@ typedef struct node
 		{
 			symbol_t *sym;
 			size_t sym_count;
+			struct node *prev;
 		} scope;
 
 		struct
 		{
-			/* TODO: this should refer to the symbol table */
-			const char *name;
+			size_t sym;
 		} call;
 
 		struct
@@ -49,7 +50,7 @@ typedef struct node
 node_t* ast_init_node(op_t type, node_t *parent);
 void ast_node_insert(node_t *parent, node_t *child);
 
-size_t ast_symbolize(node_t *node, const char *name);
+size_t ast_symbolize(node_t *node, const char *name, char insert);
 void ast_print(node_t *node, char indent);
 
 #endif /* COMP_AST_H */
