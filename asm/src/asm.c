@@ -52,6 +52,14 @@ op_t op[] =
 	/* INC — Increment by 1 */
 	{ "inc", M, FALSE, REG64, EMPTY, 0xFF, EMPTY, EMPTY },
 
+	/* IMUL - Signed Multiply */
+	{ "imul", RM, FALSE, REG32, REG32, 0x0F, 0xAF, EMPTY },
+	{ "imul", RM, FALSE, REG64, REG64, 0x0F, 0xAF, EMPTY },
+
+	/* IDIV - Signed Divide */
+	{ "idiv", M, FALSE, REG32, EMPTY, 0xF7, EMPTY, 0x07 },
+	{ "idiv", M, FALSE, REG64, EMPTY, 0xF7, EMPTY, 0x07 },
+	
 	/* SUB — Subtract */
 	{ "sub", MI, FALSE, REG8, IMM8, 0x80, EMPTY, 0x05 },
 	{ "sub", MI, FALSE, REG32, IMM8, 0x83, EMPTY, 0x05 },
@@ -367,6 +375,9 @@ void asm_make_instr(asm_t *as)
 	}
 
 	asm_emit(as, primary);
+	
+	if (op->secondary)
+		asm_emit(as, op->secondary);
 
 	/* write ModR/M */
 	if (e == M || e == MI || e == MR)
@@ -428,9 +439,6 @@ void asm_make_instr(asm_t *as)
 				asm_emit_imm(as, IMM32, o2->disp);
 		}
 	}
-	
-	if (op->secondary)
-		asm_emit(as, op->secondary);
 	
 	long imm;
 	if (IS_IMM(op->op_1))

@@ -70,6 +70,12 @@ void ast_print(node_t *node, char indent)
 	case sub:
 		type = "%sSUB@%p\n";
 		break;
+	case mul:
+		type = "%sMUL@%p\n";
+		break;
+	case divi:
+		type = "%sDIV@%p\n";
+		break;
 	default:
 		printf("Unhandled node in ast_print %p!\n", node);
 		exit(1);

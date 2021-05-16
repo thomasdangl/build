@@ -37,8 +37,7 @@ void codegen_constant(codegen_t *cg, node_t *node);
 void codegen_variable(codegen_t *cg, node_t *node);
 void codegen_assign(codegen_t *cg, node_t *node);
 
-void codegen_add(codegen_t *cg, node_t *node);
-void codegen_sub(codegen_t *cg, node_t *node);
+void codegen_ar_expr(codegen_t *cg, node_t *node);
 
 void codegen_emit(codegen_t *cg, const char *format, ...);
 void codegen_pretty_print(codegen_t *cg);

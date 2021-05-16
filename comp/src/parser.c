@@ -89,6 +89,7 @@ start:
 	case '=':  par->lah.t = equals; return;
 	case '+':  par->lah.t = plus; return;
 	case '-':  par->lah.t = minus; return;
+	case '*':  par->lah.t = times; return;
 	case '/': 
 		if (*(par->cur + 1) == '*')
 		{
@@ -102,8 +103,8 @@ start:
 				par->cur++;
 		else
 		{
-			printf("Failed to parse comment!\n");
-			exit(1);
+			par->lah.t = frac;
+			return;
 		}
 		
 		goto start;
@@ -154,28 +155,48 @@ void parser_program(parser_t *par)
 
 char parser_expression(parser_t *par, node_t *node)
 {
+	if (!parser_assign(par, node))
+		return 0;
+	
+	if (!parser_call(par, node))
+		return 0;
+
+	if (!parser_val(par, node))
+		return 0;
+
+	if (!parser_arith(par, node))
+		return 0;
+
+	return 1;
+}
+
+char parser_scope(parser_t *par, node_t *node)
+{
+	par->scope = node;
+
+	while (!parser_expression(par, node)) { }
+
+	return 0;
+}
+
+char parser_assign(parser_t *par, node_t *node)
+{
 	if (accept2(par, ident, equals))
 	{
 		node_t *new = ast_init_node(assign, node);
-		
-		if (accept(par, equals))
-		{
-			/* TODO: */
-		}
-
 		ast_init_node(variable, new)->variable.sym =
 			ast_symbolize(par->scope, par->acc.id, 1);
 		parser_expression(par, new);
 
-		if (!accept(par, semic))
-		{
-			printf("Missing semicolon.\n");
-			exit(1);
-		}
-
-		return 0;
+		if (accept(par, semic))
+			return 0;
 	}
-	
+
+	return 1;	
+}
+
+char parser_call(parser_t *par, node_t *node)
+{
 	if (accept2(par, ident, oparen))
 	{
 		size_t ind = ast_symbolize(par->scope, par->acc.id, 1);
@@ -189,10 +210,13 @@ char parser_expression(parser_t *par, node_t *node)
 			par->scope->scope.sym[ind].ext = 1;
 			return 0;
 		}
-
-		return 1;
 	}
 
+	return 1;
+}
+
+char parser_val(parser_t *par, node_t *node)
+{
 	if (accept(par, litint) || accept(par, ident))
 	{
 		switch (par->acc.t)
@@ -209,7 +233,13 @@ char parser_expression(parser_t *par, node_t *node)
 		return 0;
 	}
 
-	if (accept(par, plus) || accept(par, minus))
+	return 1;
+}
+
+char parser_arith(parser_t *par, node_t *node)
+{
+	if (accept(par, plus) || accept(par, minus)
+		|| accept(par, times) || accept(par, frac))
 	{
 		node_t *new;
 
@@ -221,6 +251,12 @@ char parser_expression(parser_t *par, node_t *node)
 		case minus:
 			new = ast_init_node(sub, node);
 			break;
+		case times:
+			new = ast_init_node(mul, node);
+			break;
+		case frac:
+			new = ast_init_node(divi, node);
+			break;
 		}
 
 		parser_expression(par, new);
@@ -229,14 +265,5 @@ char parser_expression(parser_t *par, node_t *node)
 	}
 
 	return 1;
-}
-
-char parser_scope(parser_t *par, node_t *node)
-{
-	par->scope = node;
-
-	while (!parser_expression(par, node)) { }
-
-	return 0;
 }
 

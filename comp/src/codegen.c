@@ -51,8 +51,7 @@ void codegen_eval_node(codegen_t *cg, node_t *node)
 	case constant: codegen_constant(cg, node); break;
 	case variable: codegen_variable(cg, node); break;
 	case assign: codegen_assign(cg, node); break;
-	case add: codegen_add(cg, node); break;
-	case sub: codegen_sub(cg, node); break;
+	case add: case sub: case mul: case divi: codegen_ar_expr(cg, node); break;
 	default: printf("Unhandled node type `%d` in AST.\n", node->type); exit(1);
 	}
 }
@@ -87,16 +86,18 @@ void codegen_call(codegen_t *cg, node_t *node)
 			{
 			case constant:
 				codegen_emit(cg, "MOV %s, %d", systemv_regs[i],
-						node->children[i]->constant.val);
+					node->children[i]->constant.val);
 				break;
 			case variable:
 				codegen_emit(cg, "MOV %s, [RSP-%d]", systemv_regs[i],
-						sizeof(long long) * node->children[i]->variable.sym);
+					sizeof(long long) *
+					node->children[i]->variable.sym);
 				break;
 			default:
 				/* warning! cannot clobber systemv regs! */
 				codegen_eval_node(cg, node->children[i]);
-				codegen_emit(cg, "MOV %s, RAX", systemv_regs[i]);
+				codegen_emit(cg, "MOV %s, RAX",
+					systemv_regs[i]);
 				break;
 			}
 		}
@@ -169,60 +170,97 @@ static size_t step(node_t *node)
 		step(node->children[1])) + 1;
 }
 
-static void codegen_ar_expr(codegen_t *cg, node_t *node)
-{
-	size_t left = step(node->children[0]);
-	size_t right = step(node->children[1]);
-
-	if (left == right)
-	{
-		cg->ar_base++;
-		codegen_eval_node(cg, node->children[1]);
-		cg->ar_base--;
-		codegen_eval_node(cg, node->children[0]);
-	}
-	else if (left > right)
-	{
-		cg->ar_base++;
-		codegen_eval_node(cg, node->children[0]);
-		cg->ar_base--;
-		codegen_eval_node(cg, node->children[1]);
-	}
-	else if (right > left)
-	{
-		cg->ar_base++;
-		codegen_eval_node(cg, node->children[1]);
-		cg->ar_base--;
-		codegen_eval_node(cg, node->children[0]);
-	}
-}
-
-void codegen_add(codegen_t *cg, node_t *node)
+void codegen_ar_expr(codegen_t *cg, node_t *node)
 {
 	if (node->children_count != 2)
 	{
-		printf("Ill-formated add.\n");
+		printf("Ill-formated ar_expr.\n");
 		exit(1);
 	}
 
-	codegen_ar_expr(cg, node);
-	codegen_emit(cg, "ADD %s, %s",
-		ar_regs[cg->ar_base],
-		ar_regs[cg->ar_base + 1]);
-}
+	size_t left = step(node->children[0]),
+	       right = step(node->children[1]),
+	       s = sizeof(ar_regs) / sizeof(char*);
 
-void codegen_sub(codegen_t *cg, node_t *node)
-{
-	if (node->children_count != 2)
+	char lgtr = left >= s,
+	     rgtr = right >= s,
+	     c = left <= right;
+
+	if (lgtr || rgtr)
 	{
-		printf("Ill-formated sub.\n");
-		exit(1);
+		char gtr = c ? lgtr : rgtr;
+		cg->ar_base = 0;
+		codegen_eval_node(cg, node->children[c ? 1 : 0]);
+		codegen_emit(cg, "PUSH %s", ar_regs[0]);
+		cg->ar_base = gtr ? 0 : (c ? left : right);
+		codegen_eval_node(cg, node->children[c ? 0 : 1]);
+		codegen_emit(cg, "POP %s", ar_regs[0]);
+		switch (node->type)
+		{
+		case add:
+			codegen_emit(cg, "ADD %s, %s",
+				ar_regs[0], ar_regs[1]);
+			break;
+		case sub:
+			codegen_emit(cg, "SUB %s, %s",
+				ar_regs[0], ar_regs[1]);
+			break;
+		default:
+			printf("Unhandled type `%d` in ar_expr.\n",
+				node->type);
+			exit(1);
+		}
 	}
-
-	codegen_ar_expr(cg, node);
-	codegen_emit(cg, "SUB %s, %s",
-		ar_regs[cg->ar_base],
-		ar_regs[cg->ar_base + 1]);
+	else
+	{
+		cg->ar_base++;
+		codegen_eval_node(cg, node->children[c ? 1 : 0]);
+		cg->ar_base--;
+		codegen_eval_node(cg, node->children[c ? 0 : 1]);
+	
+		char or;	
+		switch (node->type)
+		{
+		case add:
+			codegen_emit(cg, "ADD %s, %s",
+				ar_regs[cg->ar_base],
+				ar_regs[cg->ar_base + 1]);
+			break;
+		case sub:
+			codegen_emit(cg, "SUB %s, %s",
+				ar_regs[cg->ar_base],
+				ar_regs[cg->ar_base + 1]);
+			break;
+		case mul:
+			codegen_emit(cg, "IMUL %s, %s",
+				ar_regs[cg->ar_base],
+				ar_regs[cg->ar_base + 1]);
+			break;
+		/* x86 ISA is stupid. */
+		case divi:
+			or = strcmp(ar_regs[cg->ar_base], RAX) != 0;
+			codegen_emit(cg, "PUSH RDX");
+			if (or)
+			{
+				codegen_emit(cg, "PUSH RAX");
+				codegen_emit(cg, "MOV RAX, %s", ar_regs[cg->ar_base]);
+			}
+			codegen_emit(cg, "XOR RDX, RDX");
+			codegen_emit(cg, "IDIV %s",
+				ar_regs[cg->ar_base + 1]);
+			if (or)
+			{
+				codegen_emit(cg, "MOV %s, RAX", ar_regs[cg->ar_base]);
+				codegen_emit(cg, "POP RAX");
+			}
+			codegen_emit(cg, "POP RDX");
+			break;
+		default:
+			printf("Unhandled type `%d` in ar_expr.\n",
+				node->type);
+			exit(1);
+		}
+	}
 }
 
 void codegen_emit(codegen_t *cg, const char *format, ...)
