@@ -6,7 +6,8 @@
 
 typedef enum
 {
-	ident, semic, equals, plus, minus, times, frac, litint, oparen, cparen, eof
+	ident, semic, equals, plus, minus, times, frac, litint, oparen, cparen,
+	quot, ret, eof
 } token_t;
 
 typedef struct
@@ -29,12 +30,14 @@ node_t* parser_full_pass(parser_t *par);
 void parser_tokenize(parser_t *par);
 
 void parser_program(parser_t *par);
-char parser_expression(parser_t *par, node_t *node);
+char parser_lexpression(parser_t *par, node_t *node);
+char parser_rexpression(parser_t *par, node_t *node);
 char parser_scope(parser_t *par, node_t *node);
 char parser_assign(parser_t *par, node_t *node);
 char parser_call(parser_t *par, node_t *node);
 char parser_val(parser_t *par, node_t *node);
 char parser_arith(parser_t *par, node_t *node);
+char parser_return(parser_t *par, node_t *node);
 
 #endif /* COMP_PARSER_H */
 

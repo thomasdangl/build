@@ -40,6 +40,19 @@ size_t ast_symbolize(node_t *node, const char *name, char insert)
 	return ind;
 }
 
+size_t ast_stringify(node_t *node, const char *str)
+{
+	/* TODO: Implement lookup if we reuse the same string literal. */
+	size_t len = strlen(str) + 2, old = node->scope.strs_len;
+	node->scope.strs = realloc(node->scope.strs,
+			node->scope.strs_len + len);
+	strcpy(node->scope.strs + old, str);
+	node->scope.strs_len += len;
+	node->scope.strs[node->scope.strs_len - 2] = '\\';
+	node->scope.strs[node->scope.strs_len - 1] = '0';
+	return old - (old > 0);
+}
+
 void ast_print(node_t *node, char indent)
 {
 	const char *type = 0;
@@ -58,6 +71,9 @@ void ast_print(node_t *node, char indent)
 	case constant:
 		type = "%sCONST@%p\n";
 		break;
+	case str_constant:
+		type = "%sSTR_CONST@%p\n";
+		break;
 	case variable:
 		type = "%sVAR@%p\n";
 		break;
@@ -75,6 +91,9 @@ void ast_print(node_t *node, char indent)
 		break;
 	case divi:
 		type = "%sDIV@%p\n";
+		break;
+	case retn:
+		type = "%sRETN@%p\n";
 		break;
 	default:
 		printf("Unhandled node in ast_print %p!\n", node);

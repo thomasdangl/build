@@ -30,7 +30,7 @@ lexer_t* lexer_init(const char *file)
 	while (it != 0)
 	{
 		lex->loc = realloc(lex->loc, ++lex->loc_count * sizeof(loc_t));
-		lex->loc[lex->loc_count - 1] = (loc_t) { pit, 0, 0 };
+		lex->loc[lex->loc_count - 1] = (loc_t) { pit, 0, 0, 0 };
 		*it = '\0';
 		pit = it + 1;
 		it = strchr(pit, '\n');
@@ -38,6 +38,17 @@ lexer_t* lexer_init(const char *file)
 
 	lex->cur = lex->loc;
 	return lex;
+}
+
+lexer_t* lexer_duplicate(lexer_t *lex)
+{
+	lexer_t *dup =  calloc(1, sizeof(lexer_t));
+	dup->loc = calloc(lex->loc_count, sizeof(loc_t));
+	dup->loc_count = lex->loc_count;
+	for (size_t i = 0; i < lex->loc_count; i++)
+		dup->loc[i] = (loc_t) { lex->loc[i].str, 0, 0, 0 };
+	dup->cur = dup->loc;
+	return dup;
 }
 
 char* lexer_advance(lexer_t *lex)

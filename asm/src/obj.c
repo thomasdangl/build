@@ -177,11 +177,11 @@ size_t asm_to_elf_obj(asm_t *as, char **out)
 		{
 		case ABSOLUTE:
 			erel->r_info = ELF64_R_INFO(sy_ind, R_X86_64_64);
-			erel->r_addend = 0;
+			erel->r_addend = re->add;
 			break;
 		case RELATIVE:
 			erel->r_info = ELF64_R_INFO(sy_ind, R_X86_64_PC32);
-			erel->r_addend = -4;
+			erel->r_addend = re->add - 4;
 			break;
 		default:
 			printf("Unhandled relocation type.\n");

@@ -36,10 +36,12 @@ void codegen_call(codegen_t *cg, node_t *node);
 void codegen_constant(codegen_t *cg, node_t *node);
 void codegen_variable(codegen_t *cg, node_t *node);
 void codegen_assign(codegen_t *cg, node_t *node);
+void codegen_return(codegen_t *cg, node_t *node);
 
 void codegen_ar_expr(codegen_t *cg, node_t *node);
 
 void codegen_emit(codegen_t *cg, const char *format, ...);
+void codegen_emit_label(codegen_t *cg, const char *label);
 void codegen_pretty_print(codegen_t *cg);
 
 #endif /* COMP_CODEGEN_H */

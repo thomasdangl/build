@@ -83,14 +83,26 @@ start:
 	{
 	case '\n': case '\t': case '\r': case ' ': goto start;
 	case '\0': par->lah.t = eof; par->cur = 0; return;
-	case '(':  par->lah.t = oparen; return;
-	case ')':  par->lah.t = cparen; return;
-	case ';':  par->lah.t = semic; return;
-	case '=':  par->lah.t = equals; return;
-	case '+':  par->lah.t = plus; return;
-	case '-':  par->lah.t = minus; return;
-	case '*':  par->lah.t = times; return;
-	case '/': 
+	case '(' : par->lah.t = oparen; return;
+	case ')' : par->lah.t = cparen; return;
+	case ';' : par->lah.t = semic; return;
+	case '=' : par->lah.t = equals; return;
+	case '+' : par->lah.t = plus; return;
+	case '-' : par->lah.t = minus; return;
+	case '*' : par->lah.t = times; return;
+	case '\"':
+	{
+		const char *start = par->cur + 1;
+		do
+		{
+			par->cur++;
+		} while (*par->cur != '\"' || *(par->cur - 1) == '\\');
+
+		par->lah.t = quot;
+		par->lah.id = strndup(start, par->cur - start);
+		return;
+	}
+	case '/' : 
 		if (*(par->cur + 1) == '*')
 		{
 			while (*par->cur != '\0' &&
@@ -121,7 +133,12 @@ start:
 		strncpy(par->lah.id, start, i);
 
 		if (alpha)
+		{
 			par->lah.t = ident;
+
+			if (strcmp(par->lah.id, "return") == 0)
+				par->lah.t = ret;
+		}
 		else
 		{
 			if (par->lah.id[0] == '0' && (par->lah.id[1] == 'x' || par->lah.id[1] == 'X'))
@@ -153,7 +170,7 @@ void parser_program(parser_t *par)
 	}
 }
 
-char parser_expression(parser_t *par, node_t *node)
+char parser_lexpression(parser_t *par, node_t *node)
 {
 	if (!parser_assign(par, node))
 		return 0;
@@ -161,6 +178,14 @@ char parser_expression(parser_t *par, node_t *node)
 	if (!parser_call(par, node))
 		return 0;
 
+	if (!parser_return(par, node))
+		return 0;
+
+	return 1;
+}
+
+char parser_rexpression(parser_t *par, node_t *node)
+{
 	if (!parser_val(par, node))
 		return 0;
 
@@ -174,7 +199,7 @@ char parser_scope(parser_t *par, node_t *node)
 {
 	par->scope = node;
 
-	while (!parser_expression(par, node)) { }
+	while (!parser_lexpression(par, node)) { }
 
 	return 0;
 }
@@ -186,7 +211,11 @@ char parser_assign(parser_t *par, node_t *node)
 		node_t *new = ast_init_node(assign, node);
 		ast_init_node(variable, new)->variable.sym =
 			ast_symbolize(par->scope, par->acc.id, 1);
-		parser_expression(par, new);
+		if (parser_rexpression(par, new))
+		{
+			printf("Fatal error when constructing assignment.\n");
+			exit(1);
+		}
 
 		if (accept(par, semic))
 			return 0;
@@ -201,7 +230,11 @@ char parser_call(parser_t *par, node_t *node)
 	{
 		size_t ind = ast_symbolize(par->scope, par->acc.id, 1);
 		node_t *new = ast_init_node(call, node);
-		parser_expression(par, new);
+		if (parser_rexpression(par, new))
+		{
+			printf("Fatal error when constructing call.\n");
+			exit(1);
+		}
 
 		/* function invokation */
 		if (accept2(par, cparen, semic))
@@ -217,7 +250,7 @@ char parser_call(parser_t *par, node_t *node)
 
 char parser_val(parser_t *par, node_t *node)
 {
-	if (accept(par, litint) || accept(par, ident))
+	if (accept(par, litint) || accept(par, ident) || accept(par, quot))
 	{
 		switch (par->acc.t)
 		{
@@ -226,8 +259,23 @@ char parser_val(parser_t *par, node_t *node)
 				= par->acc.val;
 			break;
 		case ident:
-			ast_init_node(variable, node)->variable.sym =
-				ast_symbolize(par->scope, par->acc.id, 0);
+		{
+			size_t sym = ast_symbolize(par->scope, par->acc.id, 0);
+
+			if (sym == -1)
+			{
+				printf("Attempted to use variable "
+					"before it was declared.\n");
+				exit(1);
+			}
+
+			ast_init_node(variable, node)->variable.sym = sym;
+			break;
+		}
+		case quot:
+			ast_init_node(str_constant, node)
+				->str_constant.offset =
+				ast_stringify(par->scope, par->acc.id);
 			break;
 		}
 		return 0;
@@ -259,8 +307,29 @@ char parser_arith(parser_t *par, node_t *node)
 			break;
 		}
 
-		parser_expression(par, new);
-		parser_expression(par, new);
+		if (parser_rexpression(par, new)
+			|| parser_rexpression(par, new))
+		{
+			printf("Fatal error when constructing arith.\n");
+			exit(1);
+		}
+		return 0;
+	}
+
+	return 1;
+}
+
+char parser_return(parser_t *par, node_t *node)
+{
+	if (accept(par, ret))
+	{
+		if (parser_rexpression(par, ast_init_node(retn, node))
+			|| !accept(par, semic))
+		{
+			printf("Fatal error when construction return.\n");
+			exit(1);
+		}
+
 		return 0;
 	}
 

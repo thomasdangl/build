@@ -20,6 +20,7 @@ typedef struct
 } lexer_t;
 
 lexer_t* lexer_init(const char *filename);
+lexer_t* lexer_duplicate(lexer_t *lex);
 char* lexer_advance(lexer_t *lex);
 char* lexer_peek(lexer_t *lex);
 size_t lexer_loc(lexer_t *lex);

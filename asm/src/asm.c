@@ -90,6 +90,9 @@ op_t op[] =
 	/* TEST — Logical Compare */
 	{ "test", MI, FALSE, REG64, IMM32, 0xF7, EMPTY, EMPTY },
 
+	/* JMP - Jump */
+	{ "jmp", D, FALSE, IMM32, EMPTY, 0xE9, EMPTY, EMPTY },
+
 	/* Jcc — Jump if Condition Is Met */
 	{ "je", D, FALSE, IMM8, EMPTY, 0x74, EMPTY, EMPTY },
 	{ "jne", D, FALSE, IMM8, EMPTY, 0x75, EMPTY, EMPTY },
@@ -420,7 +423,7 @@ void asm_make_instr(asm_t *as)
 			printf("Two displacements are impossible to occur.\n");
 			exit(1);
 		}
-		else if (o1 && o1->disp != ~0)
+		else if (o1 && o1->disp != ~0 && !o1->sym)
 		{
 			/* TODO: add dynamic encoding of SIB byte. */
 			if (r1 && r1->val == RSP /* || R12 */)
@@ -431,7 +434,7 @@ void asm_make_instr(asm_t *as)
 			else
 				asm_emit_imm(as, IMM32, o1->disp);
 		}
-		else if (o2 && o2->disp != ~0)
+		else if (o2 && o2->disp != ~0 && !o1->sym)
 		{
 			if (imm_size(o2->disp) & IMM8)
 				asm_emit_imm(as, IMM8, o2->disp);
@@ -458,7 +461,22 @@ void asm_make_instr(asm_t *as)
 			{
 				.type = o1->rel ? RELATIVE : ABSOLUTE,
 				.sym = o1->sym - &as->sym[0],
-				.addr = as->out_count - as->section_start
+				.addr = as->out_count - as->section_start,
+				.add = o1->disp != ~0 ? o1->disp : 0
+			};
+			imm = 0;
+		}
+
+		if (!o1->sym && o1->def_rel)
+		{
+			as->def_rel = realloc(as->def_rel, ++as->def_rel_count
+					* sizeof(def_reloc_t));
+			as->def_rel[as->def_rel_count - 1] = (def_reloc_t)
+			{
+				.type = o1->rel ? RELATIVE : ABSOLUTE,
+				.name = o1->op,
+				.addr = as->out_count - as->section_start,
+				.add = o1->disp != ~0 ? o1->disp : 0
 			};
 			imm = 0;
 		}
@@ -477,7 +495,22 @@ void asm_make_instr(asm_t *as)
 			{
 				.type = o2->rel ? RELATIVE : ABSOLUTE,
 				.sym = o2->sym - &as->sym[0],
-				.addr = as->out_count - as->section_start
+				.addr = as->out_count - as->section_start,
+				.add = o2->disp != ~0 ? o2->disp : 0
+			};
+			imm = 0;
+		}
+		
+		if (!o2->sym && o2->def_rel)
+		{
+			as->def_rel = realloc(as->def_rel, ++as->def_rel_count
+					* sizeof(def_reloc_t));
+			as->def_rel[as->def_rel_count - 1] = (def_reloc_t)
+			{
+				.type = o2->rel ? RELATIVE : ABSOLUTE,
+				.name = o2->op,
+				.addr = as->out_count - as->section_start,
+				.add = o2->disp != ~0 ? o2->disp : 0
 			};
 			imm = 0;
 		}
@@ -508,10 +541,6 @@ char asm_consume_label(asm_t *as)
 
 	if (len < 2 || as->token[len - 1] != ':')
 		return 0;
-
-	as->sym = realloc(as->sym, ++as->sym_count * sizeof(symbol_t));
-	symbol_t *sym = &as->sym[as->sym_count - 1];
-	sym->name = calloc(len + 1, 1);
 	
 	if (len > 2 && as->token[len - 2] == ':')
 	{
@@ -519,12 +548,14 @@ char asm_consume_label(asm_t *as)
 		t = GLOBAL_LABEL;
 	}
 
-	sym->type = t;
+	as->sym = realloc(as->sym, ++as->sym_count * sizeof(symbol_t));
+	symbol_t *sym = &as->sym[as->sym_count - 1];
+	sym->name = calloc(len + 1, 1);
 	strcpy(sym->name, as->token);
 	sym->name[len - 1] = '\0';
 	sym->addr = as->out_count - as->section_start;
+	sym->type = t;
 	sym->section = ~0;
-
 	return 1;
 }
 
@@ -578,6 +609,27 @@ void asm_close_section(asm_t *as)
 	for (size_t i = 0; i < as->sym_count; i++)
 		if (as->sym[i].section == ~0)
 			as->sym[i].section = as->sec_count - 1;
+
+	for (size_t i = 0; i < as->def_rel_count; i++)
+	{
+		def_reloc_t *rel = &as->def_rel[i];
+		symbol_t *sym = asm_find_symbol(as, rel->name);
+
+		if (!sym)
+		{
+			printf("Failed to lookup symbol in deferred relocation.\n");
+			exit(1);
+		}
+
+		as->rel = realloc(as->rel, ++as->rel_count * sizeof(reloc_t));
+		as->rel[as->rel_count - 1] = (reloc_t)
+		{
+			.type = rel->type,
+			.sym = sym - &as->sym[0],
+			.addr = rel->addr,
+			.add = rel->add
+		};
+	}
 	
 	as->section = 0;
 	as->section_start = 0;
@@ -650,17 +702,17 @@ op_t* asm_match_op(asm_t *as)
 	/* special case for string literals */
 	dec_t *dec;
 	char *dup;
-	size_t sub_count = 0;
+	size_t sub_count = 0, dup_len;
 
 	for (size_t i = 0; i < as->cur.op_count; i++)
 	{
 		dec = &as->cur.op[i];
 		dup = strdup(dec->op);
-		unescape(dup);
+		dup_len = unescape(dup);
 
 		if (dup[0] == '\"')
 		{
-			for (size_t j = 1; j < strlen(dup) - 1; j++)
+			for (size_t j = 1; j < dup_len - 1; j++)
 			{
 				dec->sub = realloc(dec->sub, ++dec->sub_count * sizeof(char*));
 				dec->sub[dec->sub_count - 1] = calloc(5, 1);
@@ -672,12 +724,14 @@ op_t* asm_match_op(asm_t *as)
 			dec->sub[dec->sub_count - 1][0] = '0';
 		}
 		else if (dup[0] == '_' && dup[1] == '\"')
-			for (size_t j = 2; j < strlen(dup) - 1; j++)
+		{
+			for (size_t j = 2; j < dup_len - 1; j++)
 			{
 				dec->sub = realloc(dec->sub, ++dec->sub_count * sizeof(char*));
 				dec->sub[dec->sub_count - 1] = calloc(5, 1);
 				sprintf(dec->sub[dec->sub_count - 1], "0x%.2x", dup[j]);
 			}
+		}
 		else
 		{
 			dec->sub = realloc(dec->sub, ++dec->sub_count * sizeof(char*));
@@ -794,13 +848,14 @@ size_t asm_resolve_op(asm_t *as, size_t i, size_t j)
 		exit(1);
 	}
 
-	char *op = dec->sub[j], *sign;
+	char *op = dec->sub[j], *sign, ref = 0;
 	size_t len = strlen(op);
 
 	if (len > 2 && op[0] == '[' && op[len - 1] == ']')
 	{
 		op[len - 1] = '\0';
 		op++;
+		ref = 1;
 		dec->disp = 0;
 
 		if (sign = strchr(op, '+'))
@@ -824,13 +879,8 @@ size_t asm_resolve_op(asm_t *as, size_t i, size_t j)
 	{
 		size_t addr = sym->addr;
 		dec->sym = sym;
-
-		if (dec->disp == 0)
-		{
-			dec->disp = ~0;
+		if (ref)
 			dec->rel = 1;
-		}
-
 		op = calloc(19, 1);
 		sprintf(op, "0x%.16x", addr);
 	}
@@ -844,11 +894,13 @@ size_t asm_resolve_op(asm_t *as, size_t i, size_t j)
 				dec->extended = 1;
 			return reg[i].size;
 		}
-	
+
 	/* skip over the hexadecimal prefix. */
 	char hex = op[0] == '0' && op[1] == 'x';
 	if (hex) op += 2;
 	long res = asm_decode_imm(as, i, j);
+	if (!res && !sym && op[0] != '0')
+		dec->rel = dec->def_rel = 1;
 	return imm_size(res);
 }
 

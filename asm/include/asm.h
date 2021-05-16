@@ -39,7 +39,16 @@ typedef struct
 	enum reloc_type type;
 	size_t sym;
 	size_t addr;
+	size_t add;
 } reloc_t;
+
+typedef struct
+{
+	enum reloc_type type;
+	char *name;
+	size_t addr;
+	size_t add;
+} def_reloc_t;
 
 typedef struct
 {
@@ -47,6 +56,7 @@ typedef struct
 	symbol_t *sym;
 	int disp;
 	char rel;
+	char def_rel;
 	char extended;
 	char legacy;
 	char **sub;
@@ -77,6 +87,9 @@ typedef struct
 
 	reloc_t *rel;
 	size_t rel_count;
+	
+	def_reloc_t *def_rel;
+	size_t def_rel_count;
 
 	char *section;
 	size_t section_start;
