@@ -44,7 +44,6 @@ void codegen_run(codegen_t *cg)
 		codegen_emit(cg, "");
 
 	cg->indent++;
-	codegen_emit_label(cg, "main:");
 	codegen_eval_node(cg, cg->ast);
 	cg->indent--;
 }
@@ -66,19 +65,30 @@ void codegen_eval_node(codegen_t *cg, node_t *node)
 
 void codegen_scope(codegen_t *cg, node_t *node)
 {
+	/* TODO: correct this for the number of local variables. */
 	size_t stack = align_by(node->scope.sym_count * sizeof(long long), 16);
 
+	/* produce other scopes first. */
+	for (size_t i = 0; i < node->children_count; i++)
+		if (node->children[i]->type == scope)
+			codegen_eval_node(cg, node->children[i]);
+
 	/* write procedure prologue. */
+	const char *id = "main";
+	if (node->scope.parent)
+		id = node->scope.parent->scope.sym[node->scope.self].name;
+	codegen_emit_label(cg, "%s:", id);
 	codegen_emit(cg, "PUSH RBP");
 	codegen_emit(cg, "MOV RBP, RSP");
 	codegen_emit(cg, "SUB RSP, %d\n", stack);
 
 	/* write procedure body. */
 	for (size_t i = 0; i < node->children_count; i++)
-		codegen_eval_node(cg, node->children[i]);
+		if (node->children[i]->type != scope)
+			codegen_eval_node(cg, node->children[i]);
 	
 	/* write procedure epilogue. */
-	codegen_emit_label(cg, "exit");
+	codegen_emit_label(cg, "_%s_exit", id);
 	codegen_emit(cg, "ADD RSP, %d", stack);
 	codegen_emit(cg, "POP RBP");
 	codegen_emit(cg, "RET");
@@ -300,11 +310,14 @@ void codegen_emit(codegen_t *cg, const char *format, ...)
 	va_end(args);
 }
 
-void codegen_emit_label(codegen_t *cg, const char *label)
+void codegen_emit_label(codegen_t *cg, const char *label, ...)
 {
-	cg->indent--;
-	codegen_emit(cg, "%s:", label);
-	cg->indent++;
+	va_list args;
+	va_start(args, label);
+	cg->cur += vsprintf(cg->cur, label, args);
+	*cg->cur = ':'; cg->cur++;
+	*cg->cur = '\n'; cg->cur++;
+	va_end(args);
 }
 
 void codegen_pretty_print(codegen_t *cg)

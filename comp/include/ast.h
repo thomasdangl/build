@@ -26,6 +26,9 @@ typedef struct node
 	{
 		struct
 		{
+			struct node *parent;
+			size_t self;
+
 			symbol_t *sym;
 			size_t sym_count;
 			char *strs;
@@ -57,7 +60,7 @@ typedef struct node
 node_t* ast_init_node(op_t type, node_t *parent);
 void ast_node_insert(node_t *parent, node_t *child);
 
-size_t ast_symbolize(node_t *node, const char *name, char insert);
+size_t ast_symbolize(node_t *node, const char *name, char global, char insert);
 size_t ast_stringify(node_t *node, const char *str);
 void ast_print(node_t *node, char indent);
 

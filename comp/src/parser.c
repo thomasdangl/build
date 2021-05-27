@@ -85,6 +85,8 @@ start:
 	case '\0': par->lah.t = eof; par->cur = 0; return;
 	case '(' : par->lah.t = oparen; return;
 	case ')' : par->lah.t = cparen; return;
+	case '{' : par->lah.t = ocurl; return;
+	case '}' : par->lah.t = ccurl; return;
 	case ';' : par->lah.t = semic; return;
 	case '=' : par->lah.t = equals; return;
 	case '+' : par->lah.t = plus; return;
@@ -172,7 +174,7 @@ void parser_program(parser_t *par)
 
 char parser_lexpression(parser_t *par, node_t *node)
 {
-	if (!parser_assign(par, node))
+	if (!parser_eq(par, node))
 		return 0;
 	
 	if (!parser_call(par, node))
@@ -204,43 +206,76 @@ char parser_scope(parser_t *par, node_t *node)
 	return 0;
 }
 
-char parser_assign(parser_t *par, node_t *node)
+char parser_eq(parser_t *par, node_t *node)
 {
 	if (accept2(par, ident, equals))
 	{
-		node_t *new = ast_init_node(assign, node);
-		ast_init_node(variable, new)->variable.sym =
-			ast_symbolize(par->scope, par->acc.id, 1);
-		if (parser_rexpression(par, new))
+		char *id = par->acc.id;
+		if (par->scope == par->ast && accept(par, oparen))
+			return parser_fn(par, node, id);
+		else
+			return parser_assign(par, node);
+	}
+
+	return 1;
+}
+
+char parser_assign(parser_t *par, node_t *node)
+{
+	node_t *new = ast_init_node(assign, node);
+	ast_init_node(variable, new)->variable.sym =
+		ast_symbolize(par->scope, par->acc.id, 0, 1);
+	if (parser_rexpression(par, new))
+	{
+		printf("Fatal error when constructing assignment.\n");
+		exit(1);
+	}
+
+	return !accept(par, semic);
+}
+
+char parser_fn(parser_t *par, node_t *node, char *id)
+{
+	if (accept2(par, cparen, ocurl))
+	{
+		size_t ind = ast_symbolize(par->scope, id, 1, 1);
+		node_t *new = ast_init_node(scope, node);
+		new->scope.self = ind;
+		new->scope.parent = par->scope;
+
+		if (parser_scope(par, new))
 		{
-			printf("Fatal error when constructing assignment.\n");
+			printf("Fatal error when parsing scope of fn.\n");
 			exit(1);
 		}
 
-		if (accept(par, semic))
-			return 0;
+		if (!accept(par, ccurl))
+		{
+			printf("Curly brace mismatch in fn.\n");
+			return 1;
+		}
+
+		return 0;
 	}
 
-	return 1;	
+	return 1;
 }
 
 char parser_call(parser_t *par, node_t *node)
 {
 	if (accept2(par, ident, oparen))
 	{
-		size_t ind = ast_symbolize(par->scope, par->acc.id, 1);
+		size_t ind = ast_symbolize(par->scope, par->acc.id, 1, 1);
 		node_t *new = ast_init_node(call, node);
-		if (parser_rexpression(par, new))
-		{
-			printf("Fatal error when constructing call.\n");
-			exit(1);
-		}
+
+		/* TODO: multiple args? */
+		if (parser_rexpression(par, new)) { }
 
 		/* function invokation */
 		if (accept2(par, cparen, semic))
 		{
 			new->call.sym = ind;
-			par->scope->scope.sym[ind].ext = 1;
+			par->ast->scope.sym[ind].ext = 1;
 			return 0;
 		}
 	}
@@ -260,7 +295,7 @@ char parser_val(parser_t *par, node_t *node)
 			break;
 		case ident:
 		{
-			size_t sym = ast_symbolize(par->scope, par->acc.id, 0);
+			size_t sym = ast_symbolize(par->scope, par->acc.id, 0, 0);
 
 			if (sym == -1)
 			{

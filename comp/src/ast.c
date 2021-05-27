@@ -21,8 +21,11 @@ void ast_node_insert(node_t *parent, node_t *child)
 	parent->children[parent->children_count - 1] = child;
 }
 
-size_t ast_symbolize(node_t *node, const char *name, char insert)
+size_t ast_symbolize(node_t *node, const char *name, char global, char insert)
 {
+	if (global && node->scope.parent)
+		return ast_symbolize(node->scope.parent, name, global, insert);
+
 	for (size_t i = 0; i < node->scope.sym_count; i++)
 		if (strcmp(node->scope.sym[i].name, name) == 0)
 			return i;
@@ -42,6 +45,9 @@ size_t ast_symbolize(node_t *node, const char *name, char insert)
 
 size_t ast_stringify(node_t *node, const char *str)
 {
+	if (node->scope.parent)
+		return ast_stringify(node->scope.parent, str);
+
 	/* TODO: Implement lookup if we reuse the same string literal. */
 	size_t len = strlen(str) + 2, old = node->scope.strs_len;
 	node->scope.strs = realloc(node->scope.strs,
@@ -115,7 +121,13 @@ void ast_print(node_t *node, char indent)
 
 	if (node->type == scope)
 	{
-		printf(" { ");
+		const char *id = "main";
+		if (node->scope.parent)
+			id = node->scope.parent->scope
+				.sym[node->scope.self].name;
+		printf(" [%s] { ", id);
+		if (node->scope.sym_count == 0)
+			printf(" }\n");
 		for (size_t i = 0; i < node->scope.sym_count; i++)
 			if (i != node->scope.sym_count - 1)
 				printf("%s, ", node->scope.sym[i].name);
