@@ -7,13 +7,14 @@
 typedef enum
 {
 	scope, call, constant, str_constant, variable, assign,
-	add, sub, mul, divi, retn
+	add, sub, mul, divi, ret
 } op_t;
 
 typedef struct
 {
 	const char *name;
 	char ext;
+	char arg;
 } symbol_t;
 
 typedef struct node
@@ -33,6 +34,7 @@ typedef struct node
 			size_t sym_count;
 			char *strs;
 			size_t strs_len;
+			size_t strs_ind;
 		} scope;
 
 		struct

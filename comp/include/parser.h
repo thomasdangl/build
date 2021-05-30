@@ -6,8 +6,8 @@
 
 typedef enum
 {
-	ident, semic, equals, plus, minus, times, frac, litint, oparen, cparen,
-	ocurl, ccurl, quot, ret, eof
+	ident, semic, equals, plus, minus, times, frac, litint, comma,
+	oparen, cparen,	ocurl, ccurl, quot, lt, gt, eof
 } token_t;
 
 typedef struct

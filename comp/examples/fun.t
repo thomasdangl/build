@@ -1,8 +1,18 @@
 
-fn_1 = ()
+gen = ()
 {
-	printf("Hello World!\n");
+	-> "World";
 }
 
-fn_1();
+run = (str)
+{
+	t = gen();
+	sprintf(str, "Hello %s!\n", t);
+	-> 0;
+}
+
+str = calloc(1, 255);
+run(str);
+printf(str);
+free(str);
 

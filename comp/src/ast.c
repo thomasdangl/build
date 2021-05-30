@@ -2,6 +2,9 @@
 #include "ast.h"
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
+
+#define is_odigit(c)  ('0' <= c && c <= '7')
 
 node_t* ast_init_node(op_t type, node_t *parent)
 {
@@ -43,6 +46,68 @@ size_t ast_symbolize(node_t *node, const char *name, char global, char insert)
 	return ind;
 }
 
+static size_t unescape(char *s)
+{
+	static const char escapes[256] =
+	{
+		['"'] = '"',
+		['\''] = '\'',
+		['\\'] = '\\',
+		['a'] = '\a',
+		['b'] = '\b',
+		['E'] = 033,
+		['e'] = 033,
+		['f'] = '\f',
+		['n'] = '\n',
+		['r'] = '\r',
+		['t'] = '\t',
+		['v'] = '\v'
+	};
+	size_t m, q;
+	char *r, *w;
+
+	for (r = w = s; *r;)
+	{
+		if (*r != '\\')
+		{
+			*w++ = *r++;
+			continue;
+		}
+		r++;
+		if (!*r)
+		{
+			printf("null escape sequence\n");
+			exit(1);
+		}
+		else if (escapes[(unsigned char)*r])
+			*w++ = escapes[(unsigned char)*r++];
+		else if (is_odigit(*r))
+		{
+			for (q = 0, m = 4; m && is_odigit(*r); m--, r++)
+				q = q * 8 + (*r - '0');
+			*w++ = q <= 255 ? q : 255;
+		}
+		else if (*r == 'x' && isxdigit(r[1]))
+		{
+			r++;
+			for (q = 0, m = 2; m && isxdigit(*r); m--, r++)
+				if (isdigit(*r))
+					q = q * 16 + (*r - '0');
+				else
+					q = q * 16 + (tolower(*r) - 'a' + 10);
+			*w++ = q;
+		}
+		else
+		{
+			printf("invalid escape sequence '\\%c'\n", *r);
+			exit(1);
+		}
+	}
+
+	*w = '\0';
+	return w - s;
+}
+
 size_t ast_stringify(node_t *node, const char *str)
 {
 	if (node->scope.parent)
@@ -56,7 +121,11 @@ size_t ast_stringify(node_t *node, const char *str)
 	node->scope.strs_len += len;
 	node->scope.strs[node->scope.strs_len - 2] = '\\';
 	node->scope.strs[node->scope.strs_len - 1] = '0';
-	return old - (old > 0);
+	char *real = strdup(node->scope.strs + old),
+	     ind = node->scope.strs_ind;
+	unescape(real);
+	node->scope.strs_ind += strlen(real) + 1;
+	return ind;
 }
 
 void ast_print(node_t *node, char indent)
@@ -98,8 +167,8 @@ void ast_print(node_t *node, char indent)
 	case divi:
 		type = "%sDIV@%p\n";
 		break;
-	case retn:
-		type = "%sRETN@%p\n";
+	case ret:
+		type = "%sRET@%p\n";
 		break;
 	default:
 		printf("Unhandled node in ast_print %p!\n", node);

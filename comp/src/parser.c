@@ -87,10 +87,13 @@ start:
 	case ')' : par->lah.t = cparen; return;
 	case '{' : par->lah.t = ocurl; return;
 	case '}' : par->lah.t = ccurl; return;
+	case ',' : par->lah.t = comma; return;
 	case ';' : par->lah.t = semic; return;
 	case '=' : par->lah.t = equals; return;
 	case '+' : par->lah.t = plus; return;
 	case '-' : par->lah.t = minus; return;
+	case '<' : par->lah.t = lt; return;
+	case '>' : par->lah.t = gt; return;
 	case '*' : par->lah.t = times; return;
 	case '\"':
 	{
@@ -135,12 +138,7 @@ start:
 		strncpy(par->lah.id, start, i);
 
 		if (alpha)
-		{
 			par->lah.t = ident;
-
-			if (strcmp(par->lah.id, "return") == 0)
-				par->lah.t = ret;
-		}
 		else
 		{
 			if (par->lah.id[0] == '0' && (par->lah.id[1] == 'x' || par->lah.id[1] == 'X'))
@@ -188,6 +186,9 @@ char parser_lexpression(parser_t *par, node_t *node)
 
 char parser_rexpression(parser_t *par, node_t *node)
 {
+	if (!parser_call(par, node))
+		return 0;
+
 	if (!parser_val(par, node))
 		return 0;
 
@@ -199,9 +200,10 @@ char parser_rexpression(parser_t *par, node_t *node)
 
 char parser_scope(parser_t *par, node_t *node)
 {
-	par->scope = node;
-
-	while (!parser_lexpression(par, node)) { }
+	do
+	{
+		par->scope = node;
+	} while (!parser_lexpression(par, node));
 
 	return 0;
 }
@@ -236,10 +238,20 @@ char parser_assign(parser_t *par, node_t *node)
 
 char parser_fn(parser_t *par, node_t *node, char *id)
 {
+	node_t *new = ast_init_node(scope, 0);
+
+	while (accept(par, ident))
+	{
+		size_t sym = ast_symbolize(new, par->acc.id, 0, 1);
+		new->scope.sym[sym].arg = 1;
+
+		if (!accept(par, comma))
+			break;
+	}
+
 	if (accept2(par, cparen, ocurl))
 	{
 		size_t ind = ast_symbolize(par->scope, id, 1, 1);
-		node_t *new = ast_init_node(scope, node);
 		new->scope.self = ind;
 		new->scope.parent = par->scope;
 
@@ -255,6 +267,7 @@ char parser_fn(parser_t *par, node_t *node, char *id)
 			return 1;
 		}
 
+		ast_node_insert(node, new);
 		return 0;
 	}
 
@@ -267,10 +280,9 @@ char parser_call(parser_t *par, node_t *node)
 	{
 		size_t ind = ast_symbolize(par->scope, par->acc.id, 1, 1);
 		node_t *new = ast_init_node(call, node);
-
-		/* TODO: multiple args? */
-		if (parser_rexpression(par, new)) { }
-
+		while (!parser_rexpression(par, new))
+			if (!accept(par, comma))
+				break;
 		/* function invokation */
 		if (accept2(par, cparen, semic))
 		{
@@ -356,10 +368,10 @@ char parser_arith(parser_t *par, node_t *node)
 
 char parser_return(parser_t *par, node_t *node)
 {
-	if (accept(par, ret))
+	if (accept2(par, minus, gt))
 	{
-		if (parser_rexpression(par, ast_init_node(retn, node))
-			|| !accept(par, semic))
+		parser_rexpression(par, ast_init_node(ret, node));
+		if (!accept(par, semic))
 		{
 			printf("Fatal error when construction return.\n");
 			exit(1);
