@@ -40,8 +40,6 @@ void codegen_run(codegen_t *cg)
 		if (sym->ext == 1)
 			codegen_emit(cg, "extern %s", sym->name);
 	}
-	if (cg->ast->scope.sym_count > 0)
-		codegen_emit(cg, "");
 
 	cg->indent++;
 	codegen_eval_node(cg, cg->ast);
@@ -60,6 +58,7 @@ void codegen_eval_node(codegen_t *cg, node_t *node)
 	case assign: codegen_assign(cg, node); break;
 	case add: case sub: case mul: case divi: codegen_ar_expr(cg, node); break;
 	case ret: codegen_return(cg, node); break;
+	case dbg: codegen_dbg(cg, node); break;
 	default: printf("Unhandled node type `%d` in AST.\n", node->type); exit(1);
 	}
 }
@@ -67,7 +66,11 @@ void codegen_eval_node(codegen_t *cg, node_t *node)
 void codegen_scope(codegen_t *cg, node_t *node)
 {
 	cg->scope = node;
-	size_t stack = align_by(node->scope.sym_count * sizeof(long long), 16);
+	size_t stack = 0;
+	for (size_t i = 0; i < node->scope.sym_count; i++)
+		if (!node->scope.sym[i].ext)
+			stack += sizeof(long long);
+	stack = align_by(stack, 16);
 
 	/* produce other scopes first. */
 	for (size_t i = 0; i < node->children_count; i++)
@@ -78,15 +81,19 @@ void codegen_scope(codegen_t *cg, node_t *node)
 	cg->id = "main";
 	if (node->scope.parent)
 		cg->id = node->scope.parent->scope.sym[node->scope.self].name;
+	codegen_emit(cg, "");
 	codegen_emit_label(cg, "%s:", cg->id);
-	codegen_emit(cg, "PUSH RBP");
-	codegen_emit(cg, "MOV RBP, RSP");
-	codegen_emit(cg, "SUB RSP, %d\n", stack);
+	if (stack > 0)
+	{
+		codegen_emit(cg, "PUSH RBP");
+		codegen_emit(cg, "MOV RBP, RSP");
+		codegen_emit(cg, "SUB RSP, %d", stack);
+	}
 
 	/* adjust calling convention until we have register allocation. */
 	for (size_t i = 0; i < node->scope.sym_count; i++)
 		if (node->scope.sym[i].arg)
-			codegen_emit(cg, "MOV %s, %s\n",
+			codegen_emit(cg, "MOV %s, %s",
 				codegen_resolve(cg, i),
 				systemv_regs[i]);
 
@@ -96,17 +103,22 @@ void codegen_scope(codegen_t *cg, node_t *node)
 			codegen_eval_node(cg, node->children[i]);
 	
 	/* write procedure epilogue. */
+	codegen_emit(cg, "");
 	codegen_emit_label(cg, "_%s_exit", cg->id);
-	codegen_emit(cg, "ADD RSP, %d", stack);
-	codegen_emit(cg, "POP RBP");
+	if (stack > 0)
+	{
+		codegen_emit(cg, "ADD RSP, %d", stack);
+		codegen_emit(cg, "POP RBP");
+	}
 	codegen_emit(cg, "RET");
 	cg->scope = cg->ast;
 }
 
 void codegen_call(codegen_t *cg, node_t *node)
 {
-	/* TODO: Implement special case for va_args. */
-	codegen_emit(cg, "MOV RAX, %d", node->children_count);
+	symbol_t *sym = &cg->ast->scope.sym[node->call.sym];
+	if (sym->vaarg)
+		codegen_emit(cg, "MOV RAX, %d", node->children_count);
 
 	char *r;
 	for (size_t i = 0; i < node->children_count; i++)
@@ -141,7 +153,6 @@ void codegen_call(codegen_t *cg, node_t *node)
 			exit(1);
 		}
 
-	symbol_t *sym = &cg->ast->scope.sym[node->call.sym];
 	codegen_emit(cg, "CALL %s", sym->name);
 }
 
@@ -214,6 +225,18 @@ void codegen_return(codegen_t *cg, node_t *node)
 	if (node->children_count > 0)
 		codegen_eval_node(cg, node->children[0]);
 	codegen_emit(cg, "JMP _%s_exit", cg->id);
+}
+
+void codegen_dbg(codegen_t *cg, node_t *node)
+{
+	if (node->children_count != 0)
+	{
+		printf("Ill-formated dbg.\n");
+		exit(1);
+	}
+
+	codegen_emit(cg, "");
+	codegen_emit(cg, "# Line: %d", node->dbg.lino);
 }
 
 /*

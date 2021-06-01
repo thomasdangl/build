@@ -19,9 +19,24 @@ node_t* ast_init_node(op_t type, node_t *parent)
 
 void ast_node_insert(node_t *parent, node_t *child)
 {
+	ast_node_insert_at(parent, child, parent->children_count);
+}
+
+void ast_node_insert_at(node_t *parent, node_t *child, size_t pos)
+{
+	if (pos > parent->children_count)
+	{
+		printf("Invalid position in node.\n");
+		exit(1);
+	}
+
 	parent->children = realloc(parent->children,
-			++parent->children_count * sizeof(node_t));
-	parent->children[parent->children_count - 1] = child;
+		++parent->children_count * sizeof(node_t));
+
+	for (size_t i = parent->children_count - 1; i > pos; i--)
+		parent->children[i] = parent->children[i - 1];
+
+	parent->children[pos] = child;
 }
 
 size_t ast_symbolize(node_t *node, const char *name, char global, char insert)
@@ -116,11 +131,12 @@ size_t ast_stringify(node_t *node, const char *str)
 	/* TODO: Implement lookup if we reuse the same string literal. */
 	size_t len = strlen(str) + 2, old = node->scope.strs_len;
 	node->scope.strs = realloc(node->scope.strs,
-			node->scope.strs_len + len);
+			node->scope.strs_len + len + 1);
 	strcpy(node->scope.strs + old, str);
 	node->scope.strs_len += len;
 	node->scope.strs[node->scope.strs_len - 2] = '\\';
 	node->scope.strs[node->scope.strs_len - 1] = '0';
+	node->scope.strs[node->scope.strs_len] = '\0';
 	char *real = strdup(node->scope.strs + old),
 	     ind = node->scope.strs_ind;
 	unescape(real);
@@ -170,6 +186,8 @@ void ast_print(node_t *node, char indent)
 	case ret:
 		type = "%sRET@%p\n";
 		break;
+	case dbg:
+		return;
 	default:
 		printf("Unhandled node in ast_print %p!\n", node);
 		exit(1);

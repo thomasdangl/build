@@ -25,6 +25,7 @@ parser_t* parser_init(const char *filename)
 	fread(par->cur, 1, size, fp);
 	fclose(fp);	
 
+	par->lino++;
 	return par;
 }
 
@@ -81,7 +82,26 @@ start:
 
 	switch (*par->cur)
 	{
-	case '\n': case '\t': case '\r': case ' ': goto start;
+	case '\n': 
+	{
+		par->lino++;
+		node_t *new = ast_init_node(dbg, 0);
+		new->dbg.lino = par->lino;
+		if (par->scope->children_count > 0 && par->scope->children
+			[par->scope->children_count - 1]->type != scope)
+		{
+			if (par->dbgp == par->scope)
+			{
+				if (par->dbgc < par->scope->children_count)
+					ast_node_insert_at(par->dbgp, new, par->dbgc);
+			}
+			else
+				ast_node_insert_at(par->scope, new, 0);
+		}
+		par->dbgp = par->scope;
+		par->dbgc = par->scope->children_count;
+	}
+	case '\t': case '\r': case ' ': goto start;
 	case '\0': par->lah.t = eof; par->cur = 0; return;
 	case '(' : par->lah.t = oparen; return;
 	case ')' : par->lah.t = cparen; return;
@@ -95,6 +115,7 @@ start:
 	case '<' : par->lah.t = lt; return;
 	case '>' : par->lah.t = gt; return;
 	case '*' : par->lah.t = times; return;
+	case '~' : par->lah.t = neg; return;
 	case '\"':
 	{
 		const char *start = par->cur + 1;
@@ -276,9 +297,19 @@ char parser_fn(parser_t *par, node_t *node, char *id)
 
 char parser_call(parser_t *par, node_t *node)
 {
-	if (accept2(par, ident, oparen))
+	if (accept2(par, ident, oparen) || accept2(par, ident, neg))
 	{
 		size_t ind = ast_symbolize(par->scope, par->acc.id, 1, 1);
+		if (par->acc2.t == neg)
+		{
+			par->ast->scope.sym[ind].vaarg = 1;
+			if(!accept(par, oparen))
+			{
+				printf("Failed to construct call.\n");
+				exit(1);
+			}
+		}
+
 		node_t *new = ast_init_node(call, node);
 		while (!parser_rexpression(par, new))
 			if (!accept(par, comma))
@@ -289,6 +320,11 @@ char parser_call(parser_t *par, node_t *node)
 			new->call.sym = ind;
 			par->ast->scope.sym[ind].ext = 1;
 			return 0;
+		}
+		else
+		{
+			printf("Failed to construct call.\n");
+			exit(1);
 		}
 	}
 
