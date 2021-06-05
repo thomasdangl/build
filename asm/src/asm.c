@@ -94,8 +94,8 @@ op_t op[] =
 	{ "jmp", D, FALSE, IMM32, EMPTY, 0xE9, EMPTY, EMPTY },
 
 	/* Jcc — Jump if Condition Is Met */
-	{ "je", D, FALSE, IMM8, EMPTY, 0x74, EMPTY, EMPTY },
-	{ "jne", D, FALSE, IMM8, EMPTY, 0x75, EMPTY, EMPTY },
+	{ "je", D, FALSE, IMM32, EMPTY, 0x0F, 0x84, EMPTY },
+	{ "jne", D, FALSE, IMM32, EMPTY, 0x0F, 0x85, EMPTY },
 
 	/* INT n/INTO/INT3/INT1 — Call to Interrupt Procedure */
 	{ "int", I, FALSE, IMM8, EMPTY, 0xCD, 0x00, EMPTY },

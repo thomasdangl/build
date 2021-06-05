@@ -6,8 +6,7 @@ gen = ()
 
 run = (str)
 {
-	t = gen();
-	sprintf(str, "Hello %s!\n", t);
+	sprintf(str, "Hello %s!\n", gen());
 	-> 0;
 }
 

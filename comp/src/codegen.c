@@ -59,6 +59,7 @@ void codegen_eval_node(codegen_t *cg, node_t *node)
 	case add: case sub: case mul: case divi: codegen_ar_expr(cg, node); break;
 	case ret: codegen_return(cg, node); break;
 	case dbg: codegen_dbg(cg, node); break;
+	case ifo: codegen_if(cg, node); break;
 	default: printf("Unhandled node type `%d` in AST.\n", node->type); exit(1);
 	}
 }
@@ -237,6 +238,41 @@ void codegen_dbg(codegen_t *cg, node_t *node)
 
 	codegen_emit(cg, "");
 	codegen_emit(cg, "# Line: %d", node->dbg.lino);
+}
+
+void codegen_if(codegen_t *cg, node_t *node)
+{
+	if (node->children_count < 1)
+	{
+		printf("Ill-formated if.\n");
+		exit(1);
+	}
+
+	size_t id = cg->scope->scope.ifs++;
+	char has_else = node->ifo.el != node->children_count;
+
+	size_t start;
+	for (start = 0; node->children[start]->type == dbg; start++)
+		codegen_dbg(cg, node->children[start]);
+
+	codegen_eval_node(cg, node->children[start]);
+	codegen_emit(cg, "CMP RAX, 0");
+	codegen_emit(cg, has_else ? "JE _%s_if_%d_else" :
+		"JE _%s_if_%d_end", cg->id, id);
+
+	for (size_t i = start + 1; i < node->ifo.el; i++)
+		codegen_eval_node(cg, node->children[i]);
+	
+	if (has_else)
+	{
+		codegen_emit(cg, "JMP _%s_if_%d_end\n", cg->id, id);
+		codegen_emit_label(cg, "_%s_if_%d_else", cg->id, id);
+	}
+	
+	for (size_t i = node->ifo.el; i < node->children_count; i++)
+		codegen_eval_node(cg, node->children[i]);
+
+	codegen_emit_label(cg, "\n_%s_if_%d_end", cg->id, id);
 }
 
 /*

@@ -4,6 +4,18 @@
 #include <string.h>
 #include <ctype.h>
 
+#define EXPECT(p, s) if (!accept(p, s)) \
+	{ \
+		printf("Missing `%s` in line %d.\n", #s, p->lino - 1); \
+		exit(1); \
+	}
+#define EXPECT2(p, s1, s2) if (!accept2(p, s1, s2)) \
+	{ \
+		printf("Missing `%s` and `%s` in line %d.\n", \
+			#s1, #s2, p->lino - 1); \
+		exit(1); \
+	}
+
 parser_t* parser_init(const char *filename)
 {
 	parser_t *par =  calloc(1, sizeof(parser_t));
@@ -90,16 +102,16 @@ start:
 		if (par->scope->children_count > 0 && par->scope->children
 			[par->scope->children_count - 1]->type != scope)
 		{
-			if (par->dbgp == par->scope)
+			if (par->dbgp == par->ctl)
 			{
-				if (par->dbgc < par->scope->children_count)
+				if (par->dbgc < par->ctl->children_count)
 					ast_node_insert_at(par->dbgp, new, par->dbgc);
 			}
-			else
-				ast_node_insert_at(par->scope, new, 0);
+			else if (par->ctl->type == scope)
+				ast_node_insert_at(par->ctl, new, 0);
 		}
-		par->dbgp = par->scope;
-		par->dbgc = par->scope->children_count;
+		par->dbgp = par->ctl;
+		par->dbgc = par->ctl->children_count;
 	}
 	case '\t': case '\r': case ' ': goto start;
 	case '\0': par->lah.t = eof; par->cur = 0; return;
@@ -158,7 +170,11 @@ start:
 		par->lah.id = calloc(i + 1, 1);
 		strncpy(par->lah.id, start, i);
 
-		if (alpha)
+		if (!strcmp(par->lah.id, "if"))
+			par->lah.t = ifc;
+		else if (!strcmp(par->lah.id, "else"))
+			par->lah.t = elsec;
+		else if (alpha)
 			par->lah.t = ident;
 		else
 		{
@@ -193,11 +209,17 @@ void parser_program(parser_t *par)
 
 char parser_lexpression(parser_t *par, node_t *node)
 {
+	if (!parser_if(par, node))
+		return 0;
+
 	if (!parser_eq(par, node))
 		return 0;
 	
 	if (!parser_call(par, node))
+	{
+		EXPECT(par, semic);
 		return 0;
+	}
 
 	if (!parser_return(par, node))
 		return 0;
@@ -223,7 +245,7 @@ char parser_scope(parser_t *par, node_t *node)
 {
 	do
 	{
-		par->scope = node;
+		par->scope = par->ctl = node;
 	} while (!parser_lexpression(par, node));
 
 	return 0;
@@ -282,14 +304,39 @@ char parser_fn(parser_t *par, node_t *node, char *id)
 			exit(1);
 		}
 
-		if (!accept(par, ccurl))
-		{
-			printf("Curly brace mismatch in fn.\n");
-			return 1;
-		}
-
+		EXPECT(par, ccurl);
 		ast_node_insert(node, new);
 		return 0;
+	}
+
+	return 1;
+}
+
+char parser_if(parser_t *par, node_t *node)
+{
+	if (accept2(par, ifc, oparen))
+	{
+		node_t *ifn = ast_init_node(ifo, node);
+		par->ctl = ifn;
+
+		if (parser_rexpression(par, ifn))
+		{
+			printf("No condition in if clause.\n");
+			exit(1);
+		}
+
+		EXPECT2(par, cparen, ocurl);
+		while (!parser_lexpression(par, ifn)) { }
+		EXPECT(par, ccurl);
+		ifn->ifo.el = ifn->children_count;
+
+		if (accept2(par, elsec, ocurl))
+		{
+			while (!parser_lexpression(par, ifn)) { }
+			EXPECT(par, ccurl);
+		}
+		par->ctl = par->dbgp = par->scope;
+		par->dbgc = par->scope->children_count;
 	}
 
 	return 1;
@@ -303,29 +350,19 @@ char parser_call(parser_t *par, node_t *node)
 		if (par->acc2.t == neg)
 		{
 			par->ast->scope.sym[ind].vaarg = 1;
-			if(!accept(par, oparen))
-			{
-				printf("Failed to construct call.\n");
-				exit(1);
-			}
+			EXPECT(par, oparen);
 		}
 
 		node_t *new = ast_init_node(call, node);
 		while (!parser_rexpression(par, new))
 			if (!accept(par, comma))
 				break;
+
 		/* function invokation */
-		if (accept2(par, cparen, semic))
-		{
-			new->call.sym = ind;
-			par->ast->scope.sym[ind].ext = 1;
-			return 0;
-		}
-		else
-		{
-			printf("Failed to construct call.\n");
-			exit(1);
-		}
+		EXPECT(par, cparen);
+		new->call.sym = ind;
+		par->ast->scope.sym[ind].ext = 1;
+		return 0;
 	}
 
 	return 1;
@@ -407,15 +444,13 @@ char parser_return(parser_t *par, node_t *node)
 	if (accept2(par, minus, gt))
 	{
 		parser_rexpression(par, ast_init_node(ret, node));
-		if (!accept(par, semic))
-		{
-			printf("Fatal error when construction return.\n");
-			exit(1);
-		}
-
+		EXPECT(par, semic);
 		return 0;
 	}
 
 	return 1;
 }
+
+#undef EXPECT
+#undef EXPECT2
 

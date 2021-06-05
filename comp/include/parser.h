@@ -7,7 +7,7 @@
 typedef enum
 {
 	ident, semic, equals, plus, minus, times, frac, litint, comma,
-	oparen, cparen,	ocurl, ccurl, quot, lt, gt, neg, eof
+	oparen, cparen,	ocurl, ccurl, quot, lt, gt, neg, ifc, elsec, eof
 } token_t;
 
 typedef struct
@@ -22,7 +22,7 @@ typedef struct
 	char *cur;
 	etoken_t tok, lah;
 	etoken_t acc, acc2;
-	node_t *ast, *scope, *dbgp;
+	node_t *ast, *scope, *ctl, *dbgp;
 	size_t dbgc, lino;
 } parser_t;
 
@@ -37,6 +37,7 @@ char parser_scope(parser_t *par, node_t *node);
 char parser_eq(parser_t *par, node_t *node);
 char parser_assign(parser_t *par, node_t *node);
 char parser_fn(parser_t *par, node_t *node, char *id);
+char parser_if(parser_t *par, node_t *node);
 char parser_call(parser_t *par, node_t *node);
 char parser_val(parser_t *par, node_t *node);
 char parser_arith(parser_t *par, node_t *node);
