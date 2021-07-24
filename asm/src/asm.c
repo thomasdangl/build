@@ -86,9 +86,14 @@ op_t op[] =
 	/* CMP — Compare Two Operands */
 	{ "cmp", MI, FALSE, REG64, IMM8, 0x83, EMPTY, 0x07 },
 	{ "cmp", MI, FALSE, REG64, IMM32, 0x81, EMPTY, 0x07 },
+	{ "cmp", MR, FALSE, REG8, REG8, 0x3A, EMPTY, EMPTY },
+	{ "cmp", MR, FALSE, REG64, REG64, 0x3B, EMPTY, EMPTY },
 
 	/* TEST — Logical Compare */
 	{ "test", MI, FALSE, REG64, IMM32, 0xF7, EMPTY, EMPTY },
+
+	/* SETcc - Set Byte on Condition */
+	{ "setz", M, FALSE, REG8, EMPTY, 0x0F, 0x94, EMPTY },
 
 	/* JMP - Jump */
 	{ "jmp", D, FALSE, IMM32, EMPTY, 0xE9, EMPTY, EMPTY },

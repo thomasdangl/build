@@ -99,7 +99,7 @@ start:
 		par->lino++;
 		node_t *new = ast_init_node(dbg, 0);
 		new->dbg.lino = par->lino;
-		if (par->scope->children_count > 0 && par->scope->children
+		if (par->scope && par->scope->children_count > 0 && par->scope->children
 			[par->scope->children_count - 1]->type != scope)
 		{
 			if (par->dbgp == par->ctl)
@@ -111,7 +111,7 @@ start:
 				ast_node_insert_at(par->ctl, new, 0);
 		}
 		par->dbgp = par->ctl;
-		par->dbgc = par->ctl->children_count;
+		par->dbgc = par->ctl ? par->ctl->children_count : 0;
 	}
 	case '\t': case '\r': case ' ': goto start;
 	case '\0': par->lah.t = eof; par->cur = 0; return;
@@ -238,6 +238,9 @@ char parser_rexpression(parser_t *par, node_t *node)
 	if (!parser_arith(par, node))
 		return 0;
 
+	if (!parser_cmp(par, node))
+		return 0;
+
 	return 1;
 }
 
@@ -276,7 +279,8 @@ char parser_assign(parser_t *par, node_t *node)
 		exit(1);
 	}
 
-	return !accept(par, semic);
+	EXPECT(par, semic);
+	return 0;
 }
 
 char parser_fn(parser_t *par, node_t *node, char *id)
@@ -330,13 +334,16 @@ char parser_if(parser_t *par, node_t *node)
 		EXPECT(par, ccurl);
 		ifn->ifo.el = ifn->children_count;
 
-		if (accept2(par, elsec, ocurl))
+		if (accept(par, elsec) && parser_if(par, ifn))
 		{
+			EXPECT(par, ocurl);
 			while (!parser_lexpression(par, ifn)) { }
 			EXPECT(par, ccurl);
 		}
+
 		par->ctl = par->dbgp = par->scope;
 		par->dbgc = par->scope->children_count;
+		return 0;
 	}
 
 	return 1;
@@ -431,6 +438,23 @@ char parser_arith(parser_t *par, node_t *node)
 			|| parser_rexpression(par, new))
 		{
 			printf("Fatal error when constructing arith.\n");
+			exit(1);
+		}
+		return 0;
+	}
+
+	return 1;
+}
+
+char parser_cmp(parser_t *par, node_t *node)
+{
+	if (accept(par, equals))
+	f{
+		node_t *new = ast_init_node(eq, node);
+		if (parser_rexpression(par, new)
+			|| parser_rexpression(par, new))
+		{
+			printf("Fatal error when constructing cmp.\n");
 			exit(1);
 		}
 		return 0;

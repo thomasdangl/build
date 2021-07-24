@@ -7,6 +7,7 @@
 
 static const char* systemv_regs[] = { RDI, RSI, RDX, RCX, R8, R9 };
 static const char* ar_regs[] = { RAX, RBX, R10, R11, R12, R13, R14, R15 };
+static const char* arl_regs[] = { AL, BL, R10B, R11B, R12B, R13B, R14B, R15B };
 
 static size_t align_by(long long addr, char al)
 {
@@ -56,7 +57,7 @@ void codegen_eval_node(codegen_t *cg, node_t *node)
 	case str_constant: codegen_str_constant(cg, node); break;
 	case variable: codegen_variable(cg, node); break;
 	case assign: codegen_assign(cg, node); break;
-	case add: case sub: case mul: case divi: codegen_ar_expr(cg, node); break;
+	case add: case sub: case mul: case divi: case eq: codegen_ar_expr(cg, node); break;
 	case ret: codegen_return(cg, node); break;
 	case dbg: codegen_dbg(cg, node); break;
 	case ifo: codegen_if(cg, node); break;
@@ -346,6 +347,11 @@ void codegen_ar_expr(codegen_t *cg, node_t *node)
 			}
 			codegen_emit(cg, "POP RDX");
 			break;
+		case eq:
+			codegen_emit(cg, "CMP %s, %s",
+				ar_regs[0], ar_regs[1]);
+			codegen_emit(cg, "SETZ %s", arl_regs[0]);
+			break;
 		default:
 			printf("Unhandled type `%d` in ar_expr.\n",
 				node->type);
@@ -394,6 +400,11 @@ void codegen_ar_expr(codegen_t *cg, node_t *node)
 				codegen_emit(cg, "POP RAX");
 			}
 			codegen_emit(cg, "POP RDX");
+			break;
+		case eq:
+			codegen_emit(cg, "CMP %s, %s",
+				ar_regs[cg->ar_base], ar_regs[cg->ar_base + 1]);
+			codegen_emit(cg, "SETZ %s", arl_regs[cg->ar_base]);
 			break;
 		default:
 			printf("Unhandled type `%d` in ar_expr.\n",

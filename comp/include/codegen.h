@@ -21,6 +21,15 @@
 #define R14 "R14"
 #define R15 "R15"
 
+#define AL "AL"
+#define BL "BL"
+#define R10B "R10B"
+#define R11B "R11B"
+#define R12B "R12B"
+#define R13B "R13B"
+#define R14B "R14B"
+#define R15B "R15B"
+
 typedef struct
 {
 	node_t *ast, *scope;

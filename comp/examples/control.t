@@ -1,12 +1,21 @@
 
-val = 1;
+printf("Please enter your number: ");
+num = getchar();
 
-if (val)
+val = - num 48;
+
+if (= val 1)
 {
-	printf("Value is one!\n");
+	str = "Value is one!\n";
+}
+else if (= val 2)
+{
+	str = "Value is two!\n";
 }
 else
 {
-	printf("Value is not one!\n");
+	str = "Value is not one or two!\n";
 }
+
+printf(str);
 

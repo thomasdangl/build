@@ -189,6 +189,9 @@ void ast_print(node_t *node, char indent)
 	case ifo:
 		type = "%sIF@%p\n";
 		break;
+	case eq:
+		type = "%sEQ@%p\n";
+		break;
 	case dbg:
 		return;
 	default:

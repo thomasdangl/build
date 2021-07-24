@@ -41,6 +41,7 @@ char parser_if(parser_t *par, node_t *node);
 char parser_call(parser_t *par, node_t *node);
 char parser_val(parser_t *par, node_t *node);
 char parser_arith(parser_t *par, node_t *node);
+char parser_cmp(parser_t *par, node_t *node);
 char parser_return(parser_t *par, node_t *node);
 
 #endif /* COMP_PARSER_H */

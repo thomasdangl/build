@@ -7,7 +7,7 @@
 typedef enum
 {
 	scope, call, constant, str_constant, variable, assign,
-	add, sub, mul, divi, ret, dbg, ifo
+	add, sub, mul, divi, ret, dbg, ifo, eq
 } op_t;
 
 typedef struct
